@@ -13,11 +13,9 @@ use Illuminate\Support\Facades\Gate;
 
 class OrderController
 {
-    public function __construct(private readonly OrderService $orders) {}
-
     public function store(StoreOrderRequest $request)
     {
-        $order = $this->orders->place($request->user()->id, $request->validated('items'));
+        $order = app(OrderService::class)->place($request->user()->id, $request->validated('items'));
 
         return (new OrderResource($order))->response()->setStatusCode(201);
     }
@@ -27,7 +25,7 @@ class OrderController
         $user = $request->user();
 
         $orders = Order::query()
-            ->with('items')
+            ->with(['items', 'user'])
             // الزبون يشوف طلباته بس
             ->when(! $user->isAdmin(), fn ($q) => $q->where('user_id', $user->id))
             ->when($request->filled('status'), fn ($q) => $q->where('status', $request->input('status')))
@@ -43,12 +41,12 @@ class OrderController
         // هون الإثبات: زبون بيفتح طلب غيره بيرجع 403
         Gate::authorize('view', $order);
 
-        return new OrderResource($order->load('items'));
+        return new OrderResource($order->load(['items', 'user']));
     }
 
     public function updateStatus(UpdateOrderStatusRequest $request, Order $order): OrderResource
     {
-        $updated = $this->orders->changeStatus($order, OrderStatus::from($request->validated('status')));
+        $updated = app(OrderService::class)->changeStatus($order, OrderStatus::from($request->validated('status')));
 
         return new OrderResource($updated);
     }

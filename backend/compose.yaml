@@ -1,0 +1,219 @@
+
+services:
+  phpmyadmin:
+    image: phpmyadmin:latest
+    container_name: ecommerce_phpmyadmin
+    restart: unless-stopped
+    ports:
+      - "8081:80"
+    environment:
+      PMA_HOSTS: db,warehouse-db
+      PMA_PORTS: 3306,3306
+    depends_on:
+      db:
+        condition: service_healthy
+      warehouse-db:
+        condition: service_healthy
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: docker-ecommerce-app
+    ports:
+      - "9000:8000"
+    volumes:
+      - .:/var/www/html
+      - /var/www/html/vendor
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "true"
+      APP_URL: http://localhost:9000
+      JWT_TTL: "15"
+      DB_CONNECTION: mysql
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_DATABASE: ecommerce
+      DB_USERNAME: ecommerce_user
+      DB_PASSWORD: ecommerce_password
+      ADMIN_EMAIL: admin@example.com
+      ADMIN_PASSWORD: Admin#12345
+      WAREHOUSE_GRPC_HOST: warehouse:50051
+      WAREHOUSE_ADMIN_URL: http://warehouse:8090
+      WAREHOUSE_ADMIN_KEY: ${WAREHOUSE_ADMIN_KEY:-dev-only-change-me}
+      # ---- المتطلب الثالث: الأداء والتخزين المؤقت ----
+      CACHE_STORE: ${CACHE_STORE:-redis}                        # database لقياس "قبل"
+      REDIS_CLIENT: phpredis
+      REDIS_HOST: redis
+      PHP_CLI_SERVER_WORKERS: "${PHP_CLI_SERVER_WORKERS:-8}"   # عدة عمليات PHP، وإلا طلب بطيء بيوقف الباقي
+      DB_READ_HOST: ${DB_READ_HOST:-db}                         # db-replica لما تشغّل نسخة القراءة
+      PERF_PRODUCT_CACHE: ${PERF_PRODUCT_CACHE:-true}
+      PERF_PRODUCT_CACHE_TTL: ${PERF_PRODUCT_CACHE_TTL:-60}
+      PERF_HTTP_CACHE: ${PERF_HTTP_CACHE:-true}
+      PERF_REPLICA_PIN_SECONDS: ${PERF_REPLICA_PIN_SECONDS:-5}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      warehouse:
+        condition: service_healthy
+
+  queue:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: docker-ecommerce-queue
+    command: ["php", "artisan", "queue:work", "--tries=10", "--sleep=1"]
+    volumes:
+      - .:/var/www/html
+      - /var/www/html/vendor
+    environment:
+      APP_ENV: local
+      APP_DEBUG: "true"
+      APP_URL: http://localhost:9000
+      JWT_TTL: "15"
+      DB_CONNECTION: mysql
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_DATABASE: ecommerce
+      DB_USERNAME: ecommerce_user
+      DB_PASSWORD: ecommerce_password
+      WAREHOUSE_GRPC_HOST: warehouse:50051
+      QUEUE_CONNECTION: database
+      RUN_DATABASE_SETUP: "false"
+      CACHE_STORE: ${CACHE_STORE:-redis}
+      REDIS_CLIENT: phpredis
+      REDIS_HOST: redis
+      DB_READ_HOST: ${DB_READ_HOST:-db}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      warehouse:
+        condition: service_healthy
+
+  db:
+    image: mysql:8.0
+    container_name: docker-ecommerce-db
+    # binlog مطلوب لنسخة القراءة (الأساسية بتسجّل كل تعديل لتنقله للنسخة)
+    command: ["--server-id=1", "--log-bin=mysql-bin", "--binlog-format=ROW"]
+    environment:
+      MYSQL_DATABASE: ecommerce
+      MYSQL_USER: ecommerce_user
+      MYSQL_PASSWORD: ecommerce_password
+      MYSQL_ROOT_PASSWORD: root_docker_password
+    ports:
+      - "13306:3306"
+    volumes:
+      - ecommerce_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot_docker_password"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  warehouse-db:
+    image: mysql:8.0
+    container_name: docker-ecommerce-warehouse-db
+    environment:
+      MYSQL_DATABASE: warehouse
+      MYSQL_USER: warehouse_user
+      MYSQL_PASSWORD: warehouse_password
+      MYSQL_ROOT_PASSWORD: root_warehouse_password
+    volumes:
+      - warehouse_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot_warehouse_password"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  warehouse:
+    build:
+      context: .
+      dockerfile: warehouse-service/Dockerfile
+    container_name: docker-ecommerce-warehouse
+    environment:
+      DB_HOST: warehouse-db
+      DB_PORT: 3306
+      DB_DATABASE: warehouse
+      DB_USERNAME: warehouse_user
+      DB_PASSWORD: warehouse_password
+      WAREHOUSE_SEED: "1:20,2:20,3:20,4:20,5:20,6:20,7:20,8:20,9:20,10:20"
+      WAREHOUSE_ADMIN_KEY: ${WAREHOUSE_ADMIN_KEY:-dev-only-change-me}
+    depends_on:
+      warehouse-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.create_connection(('127.0.0.1', 50051), 2); s.close()"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ------------------------------------------------------------------
+  # المتطلب الثالث
+  # ------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: docker-ecommerce-redis
+    command: ["redis-server", "--save", "", "--appendonly", "no"]   # كاش فقط: ما بدنا نخزّنه على القرص
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # نسخة القراءة: بتشتغل بس مع  --profile replica
+  db-replica:
+    profiles: ["replica"]
+    image: mysql:8.0
+    container_name: docker-ecommerce-db-replica
+    command: ["--server-id=2", "--read-only=ON", "--relay-log=relay-bin"]
+    environment:
+      MYSQL_DATABASE: ecommerce
+      MYSQL_USER: ecommerce_user
+      MYSQL_PASSWORD: ecommerce_password
+      MYSQL_ROOT_PASSWORD: root_docker_password
+    ports:
+      - "13307:3306"
+    volumes:
+      - ecommerce_replica_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot_docker_password"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # يربط النسخة بالأساسية (مرة وحدة وبيطلع)
+  replica-setup:
+    profiles: ["replica"]
+    image: mysql:8.0
+    container_name: docker-ecommerce-replica-setup
+    restart: "no"
+    entrypoint: ["bash", "/setup-replica.sh"]
+    volumes:
+      - ./docker/replica/setup-replica.sh:/setup-replica.sh:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      db-replica:
+        condition: service_healthy
+
+  # اختبار الحمل: docker compose --profile perf run --rm k6 run -e LABEL=before /perf/k6/load-test.js
+  k6:
+    profiles: ["perf"]
+    image: grafana/k6:latest
+    container_name: docker-ecommerce-k6
+    environment:
+      BASE_URL: http://app:8000/api/v1
+    volumes:
+      - ./perf:/perf
+    depends_on:
+      - app
+
+volumes:
+  ecommerce_data:
+  ecommerce_replica_data:
+  warehouse_data:

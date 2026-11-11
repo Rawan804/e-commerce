@@ -8,10 +8,23 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Tests\TestCase;
+use App\Services\WarehouseGrpcService;
 
 abstract class ApiTestCase extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $warehouse = \Mockery::mock(WarehouseGrpcService::class);
+        $warehouse->shouldReceive('reserveStock')->andReturnUsing(function ($items, $reservationId, &$shortages) {
+            return true;
+        });
+        $warehouse->shouldReceive('releaseStock')->andReturn(true)->byDefault();
+        $this->app->instance(WarehouseGrpcService::class, $warehouse);
+    }
 
     protected function makeUser(string $role = 'customer'): User
     {
@@ -50,6 +63,13 @@ abstract class ApiTestCase extends TestCase
     protected function placeOrder(User $customer, ?Product $product = null, int $qty = 2): int
     {
         $product ??= $this->makeProduct();
+
+        $warehouse = \Mockery::mock(WarehouseGrpcService::class);
+        $warehouse->shouldReceive('reserveStock')->andReturnUsing(function ($items, $reservationId, &$shortages) {
+            return true;
+        });
+        $warehouse->shouldReceive('releaseStock')->andReturn(true)->byDefault();
+        $this->app->instance(WarehouseGrpcService::class, $warehouse);
 
         return $this->callAs($customer, 'POST', '/api/v1/orders', [
             'items' => [['product_id' => $product->id, 'quantity' => $qty]],
