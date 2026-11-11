@@ -47,6 +47,16 @@ return [
         'mysql' => [
             'driver' => 'mysql',
             'url' => env('DB_URL'),
+            // فصل القراءة عن الكتابة: الكتابة دايماً على DB_HOST (الأساسية)،
+            // والقراءة على DB_READ_HOST (نسخة القراءة). لو DB_READ_HOST مو معرّف بتصير نفس الأساسية.
+            'read' => [
+                'host' => [env('DB_READ_HOST', env('DB_HOST', '127.0.0.1'))],
+            ],
+            'write' => [
+                'host' => [env('DB_HOST', '127.0.0.1')],
+            ],
+            // sticky: بعد ما الطلب الحالي يكتب، بقية قراءاته بتروح للأساسية
+            'sticky' => true,
             'host' => env('DB_HOST', '127.0.0.1'),
             'port' => env('DB_PORT', '3306'),
             'database' => env('DB_DATABASE', 'laravel'),

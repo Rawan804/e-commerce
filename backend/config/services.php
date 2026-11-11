@@ -13,7 +13,11 @@ return [
     | a conventional file to locate the various service credentials.
     |
     */
-
+'warehouse' => [
+    'host' => env('WAREHOUSE_GRPC_HOST', 'warehouse:50051'),
+    'admin_url' => env('WAREHOUSE_ADMIN_URL', 'http://warehouse:8090'),
+    'admin_key' => env('WAREHOUSE_ADMIN_KEY'),
+],
     'postmark' => [
         'key' => env('POSTMARK_API_KEY'),
     ],

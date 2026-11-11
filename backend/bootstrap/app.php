@@ -1,6 +1,7 @@
 <?php
 
 use App\Modules\Shared\Http\Middleware\ForceJsonResponse;
+use App\Modules\Shared\Http\Middleware\ReadYourWrites;
 use App\Modules\Shared\Http\Middleware\SecurityHeaders;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -13,7 +14,11 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        $middleware->api(prepend: [ForceJsonResponse::class]);
+        $middleware->api(prepend: [
+            \Illuminate\Http\Middleware\HandleCors::class,
+            ForceJsonResponse::class,
+            ReadYourWrites::class, // بعد الكتابة: اقرأ من الأساسية لعدة ثواني (نسخة القراءة)
+        ]);
 
         // global: بيغلّف الطلب كله، بما فيه ردود الأخطاء والـ 404
         $middleware->append(SecurityHeaders::class);

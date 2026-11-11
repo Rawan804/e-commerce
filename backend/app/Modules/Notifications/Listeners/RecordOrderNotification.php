@@ -5,10 +5,16 @@ namespace App\Modules\Notifications\Listeners;
 use App\Modules\Notifications\Models\UserNotification;
 use App\Modules\Orders\Events\OrderPlaced;
 use App\Modules\Orders\Events\OrderStatusChanged;
+use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Queue\InteractsWithQueue;
 
 /** بتتفاعل مع أحداث الطلبات بدون ما تقرأ جداولها */
-class RecordOrderNotification
+class RecordOrderNotification implements ShouldQueue
 {
+    use InteractsWithQueue;
+
+    public int $tries = 5;
+    public int $backoff = 30;
     public function handlePlaced(OrderPlaced $event): void
     {
         UserNotification::create([

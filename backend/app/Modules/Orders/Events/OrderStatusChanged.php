@@ -2,8 +2,13 @@
 
 namespace App\Modules\Orders\Events;
 
-final class OrderStatusChanged
+use Illuminate\Contracts\Events\ShouldDispatchAfterCommit;
+use Illuminate\Foundation\Events\Dispatchable;
+
+final class OrderStatusChanged implements ShouldDispatchAfterCommit
 {
+    use Dispatchable;
+
     public function __construct(
         public readonly int $orderId,
         public readonly int $userId,

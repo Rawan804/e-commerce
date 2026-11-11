@@ -19,8 +19,12 @@ class SecurityHeaders
             'Content-Security-Policy' => "default-src 'none'; frame-ancestors 'none'",
             'Permissions-Policy' => 'geolocation=(), camera=(), microphone=()',
             'Cross-Origin-Resource-Policy' => 'same-origin',
-            'Cache-Control' => 'no-store',
         ]);
+
+        // الافتراضي: ما حدا يخزّن الردود. الاستثناء: المسارات العامة اللي طبّقنا عليها ConditionalGet (ETag)
+        if (! $request->attributes->get('http_cache_applied', false)) {
+            $response->headers->set('Cache-Control', 'no-store');
+        }
 
         if ($request->isSecure()) {
             $response->headers->set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');

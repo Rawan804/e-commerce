@@ -40,7 +40,12 @@ public function register(RegisterRequest $request): JsonResponse
             throw new ApiException(401, 'INVALID_CREDENTIALS', 'Invalid email or password.');
         }
 
-        return response()->json(['data' => $this->tokenPayload($token)]);
+        $user = $this->guard()->user();
+
+        return response()->json(['data' => [
+            'user' => new UserResource($user),
+            ...$this->tokenPayload($token),
+        ]]);
     }
 
     public function refresh(): JsonResponse

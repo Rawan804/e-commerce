@@ -1,0 +1,20 @@
+# أضف هالسطور لملف .env (أو عدّل القيم الموجودة). compose.yaml بيقرأ نفس الملف.
+# ملاحظة: تحت compose بيتجاوزها بقيم الـ environment (CACHE_STORE=redis, REDIS_HOST=redis)،
+# بس خلّيها بالـ .env حتى لو شغّلت php artisan خارج Docker.
+
+CACHE_STORE=redis
+REDIS_CLIENT=phpredis
+REDIS_HOST=redis
+
+# (4) نسخة القراءة: اتركها db لتعطيل النسخة، وخليها db-replica لتفعيلها
+DB_READ_HOST=db
+
+# مفاتيح التشغيل/الإيقاف (لقياس قبل/بعد)
+PERF_PRODUCT_CACHE=true
+PERF_PRODUCT_CACHE_TTL=60
+PERF_HTTP_CACHE=true
+PERF_REPLICA_PIN_SECONDS=5
+
+# لاختبار الحمل: أوقف الـ debug حتى ما يشوّه الأرقام
+APP_DEBUG=false
+LOG_LEVEL=warning
