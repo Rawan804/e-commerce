@@ -1,0 +1,34 @@
+/*
+  Minimal global resets only.
+  MUI's CssBaseline handles the heavy lifting (box-sizing, margin resets,
+  font smoothing). We only add what CssBaseline doesn't cover.
+*/
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* Ensure the page fills the viewport height */
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  font-family: 'Source Sans 3', sans-serif;
+}
+
+code,
+pre {
+  font-family: 'Fira Code', monospace;
+}
+
+/* Smooth anchor scrolling (disabled when user prefers reduced motion) */
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}
