@@ -1,0 +1,29 @@
+src/features/admin/components/ImageUploadField.tsx(118,14): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: { component: ElementType<any, keyof IntrinsicElements>; } & TypographyOwnProps & CommonProps & Omit<any, "color" | ... 9 more ... | "variantMapping">): Element | null', gave the following error.
+    Property 'component' is missing in type '{ children: string; variant: "caption"; display: string; }' but required in type '{ component: ElementType<any, keyof IntrinsicElements>; }'.
+  Overload 2 of 2, '(props: DefaultComponentProps<TypographyTypeMap<{}, "span">>): Element | null', gave the following error.
+    Type '{ children: string; variant: "caption"; display: string; }' is not assignable to type 'IntrinsicAttributes & TypographyOwnProps & CommonProps & Omit<DetailedHTMLProps<HTMLAttributes<HTMLSpanElement>, HTMLSpanElement>, "color" | ... 9 more ... | "variantMapping">'.
+      Property 'display' does not exist on type 'IntrinsicAttributes & TypographyOwnProps & CommonProps & Omit<DetailedHTMLProps<HTMLAttributes<HTMLSpanElement>, HTMLSpanElement>, "color" | ... 9 more ... | "variantMapping">'.
+src/features/admin/pages/AdminDashboardPage.tsx(121,12): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: { component: ElementType<any, keyof IntrinsicElements>; } & StackOwnProps & CommonProps & Omit<any, keyof CommonProps | keyof StackOwnProps>): Element | null', gave the following error.
+    Property 'component' is missing in type '{ children: Element[]; direction: "row"; justifyContent: string; alignItems: string; sx: { mb: number; }; }' but required in type '{ component: ElementType<any, keyof IntrinsicElements>; }'.
+  Overload 2 of 2, '(props: DefaultComponentProps<StackTypeMap<{}, "div">>): Element | null', gave the following error.
+    Type '{ children: Element[]; direction: "row"; justifyContent: string; alignItems: string; sx: { mb: number; }; }' is not assignable to type 'IntrinsicAttributes & StackOwnProps & CommonProps & Omit<DetailedHTMLProps<HTMLAttributes<HTMLDivElement>, HTMLDivElement>, keyof CommonProps | keyof StackOwnProps>'.
+      Property 'justifyContent' does not exist on type 'IntrinsicAttributes & StackOwnProps & CommonProps & Omit<DetailedHTMLProps<HTMLAttributes<HTMLDivElement>, HTMLDivElement>, keyof CommonProps | keyof StackOwnProps>'.
+src/features/admin/pages/AdminDashboardPage.tsx(173,12): error TS2769: No overload matches this call.
+  Overload 1 of 2, '(props: { component: ElementType<any, keyof IntrinsicElements>; } & StackOwnProps & CommonProps & Omit<any, keyof CommonProps | keyof StackOwnProps>): Element | null', gave the following error.
+    Property 'component' is missing in type '{ children: Element[]; direction: "row"; justifyContent: string; alignItems: string; sx: { mb: number; }; }' but required in type '{ component: ElementType<any, keyof IntrinsicElements>; }'.
+  Overload 2 of 2, '(props: DefaultComponentProps<StackTypeMap<{}, "div">>): Element | null', gave the following error.
+    Type '{ children: Element[]; direction: "row"; justifyContent: string; alignItems: string; sx: { mb: number; }; }' is not assignable to type 'IntrinsicAttributes & StackOwnProps & CommonProps & Omit<DetailedHTMLProps<HTMLAttributes<HTMLDivElement>, HTMLDivElement>, keyof CommonProps | keyof StackOwnProps>'.
+      Property 'justifyContent' does not exist on type 'IntrinsicAttributes & StackOwnProps & CommonProps & Omit<DetailedHTMLProps<HTMLAttributes<HTMLDivElement>, HTMLDivElement>, keyof CommonProps | keyof StackOwnProps>'.
+src/features/orders/services/ordersService.ts(94,3): error TS2322: Type '{ status: OrderStatus; updatedAt: string; id?: string; userId?: number; items?: OrderItem[]; subtotal?: number; shippingCost?: number; total?: number; address?: OrderAddress; createdAt?: string; }[]' is not assignable to type 'Order[]'.
+  Type '{ status: OrderStatus; updatedAt: string; id?: string; userId?: number; items?: OrderItem[]; subtotal?: number; shippingCost?: number; total?: number; address?: OrderAddress; createdAt?: string; }' is not assignable to type 'Order'.
+    Property 'id' is optional in type '{ status: OrderStatus; updatedAt: string; id?: string; userId?: number; items?: OrderItem[]; subtotal?: number; shippingCost?: number; total?: number; address?: OrderAddress; createdAt?: string; }' but required in type 'Order'.
+src/features/orders/services/ordersService.ts(95,3): error TS2322: Type '{ status: OrderStatus; updatedAt: string; id?: string; userId?: number; items?: OrderItem[]; subtotal?: number; shippingCost?: number; total?: number; address?: OrderAddress; createdAt?: string; }' is not assignable to type 'Order'.
+  Property 'id' is optional in type '{ status: OrderStatus; updatedAt: string; id?: string; userId?: number; items?: OrderItem[]; subtotal?: number; shippingCost?: number; total?: number; address?: OrderAddress; createdAt?: string; }' but required in type 'Order'.
+src/features/products/components/ProductFormDialog.tsx(253,14): error TS2375: Type '{ value: string; onChange: (url: string) => void; error: string | undefined; }' is not assignable to type 'ImageUploadFieldProps' with 'exactOptionalPropertyTypes: true'. Consider adding 'undefined' to the types of the target's properties.
+  Types of property 'error' are incompatible.
+    Type 'string | undefined' is not assignable to type 'string'.
+      Type 'undefined' is not assignable to type 'string'.
+src/features/products/pages/ProductDetailPage.tsx(37,9): error TS6133: 'isAuthenticated' is declared but its value is never read.
+src/features/products/pages/ProductsPage.tsx(38,9): error TS6133: 'isAuthenticated' is declared but its value is never read.
