@@ -15,6 +15,9 @@ return [
 
     'default' => env('QUEUE_CONNECTION', 'database'),
 
+    // اتصال طابور البريد (المتطلب الرابع): rabbitmq، وبالاختبارات sync
+    'mail_connection' => env('MAIL_QUEUE_CONNECTION', 'rabbitmq'),
+
     /*
     |--------------------------------------------------------------------------
     | Queue Connections
@@ -70,6 +73,30 @@ return [
             'queue' => env('REDIS_QUEUE', 'default'),
             'retry_after' => (int) env('REDIS_QUEUE_RETRY_AFTER', 90),
             'block_for' => null,
+            'after_commit' => false,
+        ],
+
+        'rabbitmq' => [
+            'driver' => 'rabbitmq',
+            'queue' => env('RABBITMQ_QUEUE', 'emails'),
+            'connection' => PhpAmqpLib\Connection\AMQPLazyConnection::class,
+            'hosts' => [
+                [
+                    'host' => env('RABBITMQ_HOST', 'rabbitmq'),
+                    'port' => env('RABBITMQ_PORT', 5672),
+                    'user' => env('RABBITMQ_USER', 'guest'),
+                    'password' => env('RABBITMQ_PASSWORD', 'guest'),
+                    'vhost' => env('RABBITMQ_VHOST', '/'),
+                ],
+            ],
+            'options' => [
+                'queue' => [
+                    // الرسالة اللي بتفشل نهائياً بتروح للـ Dead Letter Exchange بدل ما تنحذف
+                    'reroute_failed' => true,
+                    'failed_exchange' => env('RABBITMQ_DLX', 'dlx'),
+                    'failed_routing_key' => '%s.failed',   // emails.failed => طابور emails.dlq
+                ],
+            ],
             'after_commit' => false,
         ],
 

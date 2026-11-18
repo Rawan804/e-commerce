@@ -3,6 +3,8 @@
 namespace App\Modules\Notifications\Providers;
 
 use App\Modules\Notifications\Listeners\RecordOrderNotification;
+use App\Modules\Notifications\Listeners\SendOrderConfirmationEmail;
+use App\Modules\Notifications\Listeners\SendOrderStatusEmail;
 use App\Modules\Notifications\Models\UserNotification;
 use App\Modules\Notifications\Policies\NotificationPolicy;
 use App\Modules\Orders\Events\OrderPlaced;
@@ -22,6 +24,10 @@ class NotificationsServiceProvider extends ServiceProvider
         // متزامن حالياً؛ بالمتطلب الرابع (المعالجة غير المتزامنة) بينتقل لطابور
         Event::listen(OrderPlaced::class, [RecordOrderNotification::class, 'handlePlaced']);
         Event::listen(OrderStatusChanged::class, [RecordOrderNotification::class, 'handleStatusChanged']);
+
+        // المتطلب الرابع: بريد التأكيد عبر RabbitMQ (الـ Worker هو اللي بيرسله)
+        Event::listen(OrderPlaced::class, SendOrderConfirmationEmail::class);
+        Event::listen(OrderStatusChanged::class, SendOrderStatusEmail::class);
 
         Route::middleware('api')->prefix('api/v1')->group(__DIR__.'/../Routes/api.php');
     }
