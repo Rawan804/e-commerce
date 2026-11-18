@@ -22,12 +22,12 @@ import ReceiptLongOutlined from '@mui/icons-material/ReceiptLongOutlined'
 import AttachMoneyOutlined from '@mui/icons-material/AttachMoneyOutlined'
 import WarningAmberOutlined from '@mui/icons-material/WarningAmberOutlined'
 import { Link } from 'react-router-dom'
-import { productsService } from '@/features/products/services/productsService'
-import type { Product } from '@/features/products/types/product.types'
-import { usersService } from '@/features/users/services/usersService'
-import { isOrderServerError, NEXT_ORDER_STATUSES, orderErrorMessage, ordersService, type Order } from '@/features/orders'
-import { formatCurrency, formatDate } from '@/shared/lib/formatters'
-import { PATHS } from '@/shared/config/paths'
+import { productsService } from '../../../features/products/services/productsService'
+import type { Product } from '../../../features/products/types/product.types'
+import { usersService } from '../../../features/users/services/usersService'
+import { isOrderServerError, NEXT_ORDER_STATUSES, orderErrorMessage, ordersService, type Order } from '../../../features/orders'
+import { formatCurrency, formatDate } from '../../../shared/lib/formatters'
+import { PATHS } from '../../../shared/config/paths'
 import StatCard from '../components/StatCard'
 import OrderStatusChip from '../components/OrderStatusChip'
 import OrderStatusDialog from '../components/OrderStatusDialog'
@@ -91,7 +91,7 @@ export default function AdminDashboardPage() {
 
   useEffect(() => { void load() }, [])
 
-  async function handleStatusChange(orderId: string, status: import('@/features/orders').OrderStatus) {
+  async function handleStatusChange(orderId: string, status: import('../../../features/orders').OrderStatus) {
     setStatusLoading(true)
     try {
       const updated = await ordersService.updateStatus(orderId, status)

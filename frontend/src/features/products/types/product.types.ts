@@ -8,12 +8,16 @@ export interface Product {
   description: string
   /** Price in major currency units (e.g. dollars), not cents. */
   price: number
+  compareAtPrice?: number
   /** Category string — open-ended, comes from the backend. */
   category: string
   /** Absolute image URL returned by the backend, or empty string. */
   image: string
   /** Short availability label derived from stock_quantity. */
   availability?: string
+  rating?: number
+  reviewCount?: number
+  featured?: boolean
   /** Current stock from the Warehouse service, or null when unavailable. */
   stock: number | null
   createdAt: string

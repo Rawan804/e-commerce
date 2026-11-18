@@ -27,8 +27,8 @@
        TypeScript 7 removed `baseUrl`; use a leading "./" in the path array.
        Vite handles the actual resolution via its own alias in vite.config.ts.  */
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./frontend/src/*"]
     }
   },
-  "include": ["src"]
+  "include": ["frontend/src"]
 }
