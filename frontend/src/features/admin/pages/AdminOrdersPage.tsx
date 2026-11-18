@@ -4,6 +4,10 @@ import {
   Box,
   Button,
   Container,
+  Dialog,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
   FormControl,
   InputLabel,
   MenuItem,
@@ -18,21 +22,17 @@ import {
   TableRow,
   Typography,
 } from '@mui/material'
-import { ordersService, ORDER_STATUSES, type Order, type OrderStatus } from '@/features/orders'
+import { isOrderServerError, NEXT_ORDER_STATUSES, orderErrorMessage, ordersService, ORDER_STATUSES, useAdminOrderPlaced, type Order, type OrderStatus } from '@/features/orders'
 import { formatCurrency, formatDate } from '@/shared/lib/formatters'
 import ErrorMessage from '@/shared/components/feedback/ErrorMessage'
 import EmptyState from '@/shared/components/feedback/EmptyState'
-import ProductSearch from '@/features/products/components/ProductSearch'
 import ProductPagination from '@/features/products/components/ProductPagination'
 import OrderStatusChip from '../components/OrderStatusChip'
 import OrderStatusDialog from '../components/OrderStatusDialog'
-import { useDebounce } from '@/shared/hooks/useDebounce'
 
 const PER_PAGE = 10
 
 export default function AdminOrdersPage() {
-  const [searchInput, setSearchInput] = useState('')
-  const debouncedSearch = useDebounce(searchInput, 350)
   const [statusFilter, setStatusFilter] = useState<OrderStatus | 'all'>('all')
   const [page, setPage] = useState(1)
 
@@ -43,10 +43,16 @@ export default function AdminOrdersPage() {
   const [error, setError] = useState<string | null>(null)
 
   const [statusTarget, setStatusTarget] = useState<Order | null>(null)
+  const [quickStatusTarget, setQuickStatusTarget] = useState<{
+    order: Order
+    status: OrderStatus
+  } | null>(null)
   const [statusLoading, setStatusLoading] = useState(false)
+  const [detailOrderId, setDetailOrderId] = useState<string | null>(null)
+  const [detailOrder, setDetailOrder] = useState<Order | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [detailError, setDetailError] = useState<string | null>(null)
   const [toast, setToast] = useState<{ msg: string; severity: 'success' | 'error' } | null>(null)
-
-  useEffect(() => { setPage(1) }, [debouncedSearch, statusFilter])
 
   const load = useCallback(async () => {
     let active = true
@@ -56,7 +62,6 @@ export default function AdminOrdersPage() {
       const res = await ordersService.list({
         page,
         perPage: PER_PAGE,
-        search: debouncedSearch,
         status: statusFilter,
       })
       if (!active) return
@@ -64,27 +69,73 @@ export default function AdminOrdersPage() {
       setTotal(res.total)
       setTotalPages(res.totalPages)
     } catch (e) {
-      if (active) setError(e instanceof Error ? e.message : 'Failed to load orders.')
+      if (active) setError(orderErrorMessage(e, 'Failed to load orders.'))
     } finally {
       if (active) setLoading(false)
     }
     return () => { active = false }
-  }, [page, debouncedSearch, statusFilter])
+  }, [page, statusFilter])
 
   useEffect(() => { void load() }, [load])
+
+  // Real time: a new order appears here the moment a customer places it (no refresh).
+  useAdminOrderPlaced((order) => {
+    setToast({ msg: `New order #${order.id} from ${order.userName ?? 'a customer'}`, severity: 'success' })
+    const matchesView = page === 1 && (statusFilter === 'all' || statusFilter === 'pending')
+    if (!matchesView || orders.some((o) => o.id === order.id)) return
+    setOrders((prev) => [order, ...prev].slice(0, PER_PAGE))
+    setTotal((t) => t + 1)
+  })
 
   async function handleStatusChange(orderId: string, status: OrderStatus) {
     setStatusLoading(true)
     try {
       const updated = await ordersService.updateStatus(orderId, status)
-      setOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)))
+      setOrders((prev) => prev.map((order) =>
+        order.id === updated.id ? { ...updated, userName: order.userName } : order,
+      ))
+      await load()
       setToast({ msg: `Order ${orderId} updated to "${status}".`, severity: 'success' })
-    } catch {
-      setToast({ msg: 'Failed to update order status.', severity: 'error' })
+    } catch (error) {
+      setToast({
+        msg: orderErrorMessage(
+          error,
+          'Failed to update order status.',
+          'The server returned an error after the status update. The order may have changed; the list is being refreshed.',
+        ),
+        severity: 'error',
+      })
+      if (isOrderServerError(error)) await load()
     } finally {
       setStatusLoading(false)
       setStatusTarget(null)
+      setQuickStatusTarget(null)
     }
+  }
+
+  async function handleViewDetails(orderId: string) {
+    setDetailOrderId(orderId)
+    setDetailOrder(null)
+    setDetailError(null)
+    setDetailLoading(true)
+    try {
+      const result = await ordersService.getById(orderId)
+      if (!result) {
+        setDetailError('This order could not be found.')
+        return
+      }
+      setDetailOrder(result)
+    } catch (error) {
+      setDetailError(orderErrorMessage(error, 'Could not load this order.'))
+    } finally {
+      setDetailLoading(false)
+    }
+  }
+
+  function closeDetails() {
+    setDetailOrderId(null)
+    setDetailOrder(null)
+    setDetailError(null)
   }
 
   return (
@@ -96,17 +147,17 @@ export default function AdminOrdersPage() {
         Manage and update customer order statuses.
       </Typography>
 
-      {/* Toolbar */}
+      {/* Status filter */}
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 3 }}>
-        <Box sx={{ flex: 1 }}>
-          <ProductSearch value={searchInput} onChange={setSearchInput} />
-        </Box>
         <FormControl sx={{ minWidth: 160 }} size="small">
           <InputLabel>Status</InputLabel>
           <Select
             label="Status"
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as OrderStatus | 'all')}
+            onChange={(e) => {
+              setPage(1)
+              setStatusFilter(e.target.value)
+            }}
           >
             <MenuItem value="all">All statuses</MenuItem>
             {ORDER_STATUSES.map((s) => (
@@ -125,7 +176,7 @@ export default function AdminOrdersPage() {
       ) : orders.length === 0 ? (
         <EmptyState
           title="No orders found"
-          description="Try adjusting the search term or status filter."
+          description="Try selecting a different status filter."
         />
       ) : (
         <>
@@ -148,7 +199,7 @@ export default function AdminOrdersPage() {
                     <TableCell sx={{ fontFamily: 'monospace', fontWeight: 600 }}>
                       {order.id}
                     </TableCell>
-                    <TableCell>{order.address.fullName}</TableCell>
+                    <TableCell>{order.userName ?? `User #${order.userId}`}</TableCell>
                     <TableCell sx={{ color: 'text.secondary' }}>
                       {order.items.length} item{order.items.length !== 1 ? 's' : ''}
                     </TableCell>
@@ -162,9 +213,37 @@ export default function AdminOrdersPage() {
                       {formatDate(order.createdAt)}
                     </TableCell>
                     <TableCell>
-                      <Button size="small" onClick={() => setStatusTarget(order)}>
-                        Update
-                      </Button>
+                      <Stack direction={{ xs: 'column', sm: 'row' }} spacing={0.5}>
+                        <Button size="small" disabled={statusLoading} onClick={() => { void handleViewDetails(order.id) }}>
+                          Details
+                        </Button>
+                        {order.status === 'pending' &&
+                          NEXT_ORDER_STATUSES[order.status].includes('confirmed') && (
+                            <Button
+                              size="small"
+                              disabled={statusLoading}
+                              onClick={() => { setQuickStatusTarget({ order, status: 'confirmed' }); }}
+                            >
+                              Accept
+                            </Button>
+                        )}
+                        {order.status === 'pending' &&
+                          NEXT_ORDER_STATUSES[order.status].includes('cancelled') && (
+                            <Button
+                              size="small"
+                              color="error"
+                              disabled={statusLoading}
+                              onClick={() => { setQuickStatusTarget({ order, status: 'cancelled' }); }}
+                            >
+                              Reject
+                            </Button>
+                        )}
+                        {order.status !== 'pending' && NEXT_ORDER_STATUSES[order.status].length > 0 && (
+                          <Button size="small" disabled={statusLoading} onClick={() => { setStatusTarget(order); }}>
+                            Update
+                          </Button>
+                        )}
+                      </Stack>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -185,18 +264,92 @@ export default function AdminOrdersPage() {
       <OrderStatusDialog
         order={statusTarget}
         loading={statusLoading}
-        onClose={() => setStatusTarget(null)}
+        onClose={() => { setStatusTarget(null); }}
         onConfirm={handleStatusChange}
       />
+
+      <Dialog
+        open={quickStatusTarget !== null}
+        onClose={() => {
+          if (!statusLoading) setQuickStatusTarget(null)
+        }}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle sx={{ fontWeight: 700 }}>
+          {quickStatusTarget?.status === 'confirmed' ? 'Accept order?' : 'Reject order?'}
+        </DialogTitle>
+        <DialogContent>
+          <Typography color="text.secondary">
+            {quickStatusTarget
+              ? quickStatusTarget.status === 'confirmed'
+                ? `Accept order ${quickStatusTarget.order.id}? Its existing stock reservation will remain in place.`
+                : `Reject order ${quickStatusTarget.order.id}? Reserved stock will be released before the order is cancelled.`
+              : ''}
+          </Typography>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 3 }}>
+          <Button onClick={() => { setQuickStatusTarget(null); }} disabled={statusLoading}>
+            Keep order
+          </Button>
+          <Button
+            variant="contained"
+            color={quickStatusTarget?.status === 'cancelled' ? 'error' : 'primary'}
+            disabled={statusLoading || quickStatusTarget === null}
+            onClick={() => {
+              if (quickStatusTarget) {
+                void handleStatusChange(quickStatusTarget.order.id, quickStatusTarget.status)
+              }
+            }}
+          >
+            {statusLoading
+              ? 'Saving…'
+              : quickStatusTarget?.status === 'confirmed'
+                ? 'Accept order'
+                : 'Reject order'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={detailOrderId !== null} onClose={closeDetails} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontWeight: 700 }}>Order details</DialogTitle>
+        <DialogContent dividers>
+          {detailLoading ? (
+            <Skeleton variant="rectangular" height={160} />
+          ) : detailError ? (
+            <Alert severity="error">{detailError}</Alert>
+          ) : detailOrder ? (
+            <Stack spacing={2}>
+              <Box>
+                <Typography variant="body2" color="text.secondary">Order #{detailOrder.id}</Typography>
+                <Typography>{detailOrder.userName ?? `User #${detailOrder.userId}`}</Typography>
+                <Typography sx={{ textTransform: 'capitalize' }}>Status: {detailOrder.status}</Typography>
+                <Typography>Total: {formatCurrency(detailOrder.total)}</Typography>
+                <Typography variant="body2" color="text.secondary">{formatDate(detailOrder.createdAt)}</Typography>
+              </Box>
+              <Typography variant="subtitle2" sx={{ fontWeight: 700 }}>Items</Typography>
+              {detailOrder.items.map((item) => (
+                <Box key={item.productId} sx={{ display: 'flex', justifyContent: 'space-between', gap: 2 }}>
+                  <Typography>{item.name} × {item.qty}</Typography>
+                  <Typography>{formatCurrency(item.price * item.qty)}</Typography>
+                </Box>
+              ))}
+            </Stack>
+          ) : null}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeDetails}>Close</Button>
+        </DialogActions>
+      </Dialog>
 
       <Snackbar
         open={Boolean(toast)}
         autoHideDuration={3500}
-        onClose={() => setToast(null)}
+        onClose={() => { setToast(null); }}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >
         {toast ? (
-          <Alert severity={toast.severity} variant="filled" onClose={() => setToast(null)}>
+          <Alert severity={toast.severity} variant="filled" onClose={() => { setToast(null); }}>
             {toast.msg}
           </Alert>
         ) : undefined}

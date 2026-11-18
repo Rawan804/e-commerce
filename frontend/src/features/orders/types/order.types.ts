@@ -2,27 +2,25 @@
 
 export type OrderStatus =
   | 'pending'
-  | 'processing'
+  | 'confirmed'
   | 'shipped'
   | 'delivered'
   | 'cancelled'
 
 export const ORDER_STATUSES: OrderStatus[] = [
   'pending',
-  'processing',
+  'confirmed',
   'shipped',
   'delivered',
   'cancelled',
 ]
 
-export interface OrderAddress {
-  fullName: string
-  addressLine1: string
-  addressLine2?: string
-  city: string
-  state: string
-  postalCode: string
-  country: string
+export const NEXT_ORDER_STATUSES: Record<OrderStatus, OrderStatus[]> = {
+  pending: ['confirmed', 'cancelled'],
+  confirmed: ['shipped', 'cancelled'],
+  shipped: ['delivered'],
+  delivered: [],
+  cancelled: [],
 }
 
 export interface OrderItem {
@@ -30,37 +28,27 @@ export interface OrderItem {
   name: string
   price: number
   qty: number
-  image: string
 }
 
 export interface Order {
   id: string
   userId: number
+  userName: string | null
   items: OrderItem[]
-  subtotal: number
-  shippingCost: number
   total: number
-  address: OrderAddress
   status: OrderStatus
   createdAt: string
   updatedAt: string
 }
 
 export interface CreateOrderPayload {
-  userId: number
-  items: OrderItem[]
-  subtotal: number
-  shippingCost: number
-  total: number
-  address: OrderAddress
+  items: { productId: number; qty: number }[]
 }
 
 export interface OrderQuery {
   page: number
   perPage: number
-  search?: string
   status?: OrderStatus | 'all'
-  userId?: number
 }
 
 export interface OrderPageResult {

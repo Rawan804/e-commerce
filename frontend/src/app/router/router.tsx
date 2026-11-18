@@ -7,11 +7,11 @@ import AuthLayout from '@/app/layouts/AuthLayout'
 import AdminLayout from '@/features/admin/layouts/AdminLayout'
 import AdminRoute from './AdminRoute'
 import CustomerRoute from './CustomerRoute'
-import ProtectedRoute from './ProtectedRoute'
 import RouteError from '@/app/components/RouteError'
 import PageNotFound from '@/app/components/PageNotFound'
 import { PATHS } from '@/shared/config/paths'
 
+// ─── Lazy-loaded pages ────────────────────────────────────────────────────────
 
 // Public / storefront
 const HomePage = lazy(() => import('@/features/home/pages/HomePage'))
@@ -76,6 +76,10 @@ export const router = createBrowserRouter([
       { path: PATHS.register, element: withSuspense(<RegisterPage />) },
     ],
   },
+
+  // ── Admin routes (AdminRoute guard → AdminLayout) ─────────────────────────
+  // AdminRoute redirects unauthenticated users to /login and non-admins to /.
+  // AdminLayout provides the admin shell (Header in admin mode + Footer).
   {
     element: <AdminRoute />,
     errorElement: <RouteError />,
@@ -95,7 +99,7 @@ export const router = createBrowserRouter([
 
   // ── Legacy /users route (kept for backward compatibility, requires auth) ──
   {
-    element: <ProtectedRoute />,
+    element: <AdminRoute />,
     errorElement: <RouteError />,
     children: [
       {
@@ -104,6 +108,10 @@ export const router = createBrowserRouter([
       },
     ],
   },
+
+  // ── Customer routes (CustomerRoute guard → RootLayout) ───────────────────
+  // CustomerRoute allows any authenticated user (both customer and admin roles).
+  // Uses RootLayout so the customer sees the storefront header + cart drawer.
   {
     element: <CustomerRoute />,
     errorElement: <RouteError />,

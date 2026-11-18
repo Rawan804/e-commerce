@@ -1,4 +1,6 @@
-
+// ─── Generic paginated response ──────────────────────────────────────────────
+// Shape mirrors Laravel's default paginator. Verify field names against a real
+// response before Phase 4 — never assume.
 export interface PaginatedResponse<T> {
   data: T[]
   meta: PaginationMeta
@@ -22,9 +24,11 @@ export interface PaginationLinks {
   next: string | null
 }
 
-
+// ─── Normalized API error ─────────────────────────────────────────────────────
+// Covers: network errors, 4xx/5xx, and Laravel 422 validation errors.
 export interface ApiError {
   message: string
-  status: number | null  
-  errors?: Record<string, string[]>  
+  status: number | null   // null = network / pre-response error
+  code?: string
+  errors?: Record<string, string[]>  // Laravel 422 validation field errors
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   Box,
+  Alert,
   Chip,
   Collapse,
   Container,
@@ -10,20 +11,18 @@ import {
   MenuItem,
   Select,
   Skeleton,
+  Snackbar,
   Stack,
   Typography,
 } from '@mui/material'
 import ExpandMoreOutlined from '@mui/icons-material/ExpandMoreOutlined'
 import ExpandLessOutlined from '@mui/icons-material/ExpandLessOutlined'
 import ReceiptLongOutlined from '@mui/icons-material/ReceiptLongOutlined'
-import { useAuth } from '@/features/auth'
-import { ordersService, ORDER_STATUSES, type Order, type OrderStatus } from '@/features/orders'
+import { orderErrorMessage, ordersService, ORDER_STATUSES, useOrderStatusUpdates, type Order, type OrderStatus } from '@/features/orders'
 import { formatCurrency, formatRelativeDate } from '@/shared/lib/formatters'
 import { PATHS } from '@/shared/config/paths'
-import { useDebounce } from '@/shared/hooks/useDebounce'
 import ErrorMessage from '@/shared/components/feedback/ErrorMessage'
 import EmptyState from '@/shared/components/feedback/EmptyState'
-import ProductSearch from '@/features/products/components/ProductSearch'
 import ProductPagination from '@/features/products/components/ProductPagination'
 import OrderStatusChip from '@/features/admin/components/OrderStatusChip'
 
@@ -68,39 +67,8 @@ function OrderDetailPanel({ order }: { order: Order }) {
       <Box
         sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 3, flexWrap: 'wrap' }}
       >
-        {/* Shipping address */}
-        <Box>
-          <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 0.5 }}>
-            Shipping address
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {order.address.fullName}
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {order.address.addressLine1}
-            {order.address.addressLine2 ? `, ${order.address.addressLine2}` : ''}
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {order.address.city}, {order.address.state} {order.address.postalCode}
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            {order.address.country}
-          </Typography>
-        </Box>
-
-        {/* Price breakdown */}
+        {/* Persisted order total */}
         <Stack spacing={0.5} sx={{ minWidth: 180 }}>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-            <Typography variant="body2" color="text.secondary">Subtotal</Typography>
-            <Typography variant="body2">{formatCurrency(order.subtotal)}</Typography>
-          </Box>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-            <Typography variant="body2" color="text.secondary">Shipping</Typography>
-            <Typography variant="body2">
-              {order.shippingCost === 0 ? 'Free' : formatCurrency(order.shippingCost)}
-            </Typography>
-          </Box>
-          <Divider />
           <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
             <Typography variant="body2" sx={{ fontWeight: 700 }}>Total</Typography>
             <Typography variant="body2" sx={{ fontWeight: 700 }}>
@@ -116,6 +84,30 @@ function OrderDetailPanel({ order }: { order: Order }) {
 // ─── Single order row ─────────────────────────────────────────────────────────
 function OrderRow({ order }: { order: Order }) {
   const [expanded, setExpanded] = useState(false)
+  const [details, setDetails] = useState<Order | null>(null)
+  const [detailsLoading, setDetailsLoading] = useState(false)
+  const [detailsError, setDetailsError] = useState<string | null>(null)
+
+  async function toggleDetails() {
+    const shouldExpand = !expanded
+    setExpanded(shouldExpand)
+    if (!shouldExpand || details || detailsLoading) return
+
+    setDetailsLoading(true)
+    setDetailsError(null)
+    try {
+      const result = await ordersService.getById(order.id)
+      if (!result) {
+        setDetailsError('This order could not be found.')
+        return
+      }
+      setDetails(result)
+    } catch (error) {
+      setDetailsError(orderErrorMessage(error, 'Could not load this order.'))
+    } finally {
+      setDetailsLoading(false)
+    }
+  }
 
   return (
     <Box
@@ -128,11 +120,16 @@ function OrderRow({ order }: { order: Order }) {
     >
       {/* Header row */}
       <Box
-        onClick={() => setExpanded((v) => !v)}
+        onClick={() => { void toggleDetails() }}
         role="button"
         tabIndex={0}
         aria-expanded={expanded}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setExpanded((v) => !v) }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault()
+            void toggleDetails()
+          }
+        }}
         sx={{
           display: 'flex',
           alignItems: 'center',
@@ -170,7 +167,13 @@ function OrderRow({ order }: { order: Order }) {
 
       {/* Expandable detail */}
       <Collapse in={expanded} timeout="auto" unmountOnExit>
-        <OrderDetailPanel order={order} />
+        {detailsLoading ? (
+          <Skeleton variant="rectangular" height={120} />
+        ) : detailsError ? (
+          <Alert severity="error">{detailsError}</Alert>
+        ) : details ? (
+          <OrderDetailPanel order={details} />
+        ) : null}
       </Collapse>
     </Box>
   )
@@ -178,10 +181,6 @@ function OrderRow({ order }: { order: Order }) {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 export default function CustomerOrdersPage() {
-  const { user } = useAuth()
-
-  const [searchInput, setSearchInput] = useState('')
-  const debouncedSearch = useDebounce(searchInput, 350)
   const [statusFilter, setStatusFilter] = useState<OrderStatus | 'all'>('all')
   const [page, setPage] = useState(1)
 
@@ -190,39 +189,45 @@ export default function CustomerOrdersPage() {
   const [totalPages, setTotalPages] = useState(1)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
 
-  useEffect(() => { setPage(1) }, [debouncedSearch, statusFilter])
+  useEffect(() => { setPage(1) }, [statusFilter])
 
   const load = useCallback(async () => {
-    if (!user) return
-    let active = true
     setLoading(true)
     setError(null)
     try {
       const res = await ordersService.list({
         page,
         perPage: PER_PAGE,
-        search: debouncedSearch,
         status: statusFilter,
-        userId: user.id,
       })
-      if (!active) return
       setOrders(res.items)
       setTotal(res.total)
       setTotalPages(res.totalPages)
     } catch (e) {
-      if (active) setError(e instanceof Error ? e.message : 'Failed to load orders.')
+      setError(orderErrorMessage(e, 'Failed to load orders.'))
     } finally {
-      if (active) setLoading(false)
+      setLoading(false)
     }
-    return () => { active = false }
-  }, [user, page, debouncedSearch, statusFilter])
+  }, [page, statusFilter])
 
   useEffect(() => { void load() }, [load])
 
+  // Real time: when an admin changes the status of one of MY orders, update it here instantly.
+  useOrderStatusUpdates(
+    orders.map((o) => o.id),
+    (updated, _from, to) => {
+      setOrders((prev) =>
+        prev.map((o) => (o.id === updated.id ? { ...o, status: updated.status, updatedAt: updated.updatedAt } : o)),
+      )
+      setToast(`Order #${updated.id} is now ${to}.`)
+    },
+  )
+
   return (
     <Container maxWidth="lg" sx={{ py: { xs: 4, md: 6 } }}>
-      <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 0.5 }}>
+      <Stack direction="row" spacing={1.5} sx={{ mb: 0.5, alignItems: 'center' }}>
         <ReceiptLongOutlined color="primary" fontSize="large" aria-hidden />
         <Typography variant="h3" component="h1" sx={{ fontWeight: 700 }}>
           My Orders
@@ -234,20 +239,12 @@ export default function CustomerOrdersPage() {
 
       {/* Filters */}
       <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 3 }}>
-        <Box sx={{ flex: 1 }}>
-          <ProductSearch
-            value={searchInput}
-            onChange={setSearchInput}
-            label="Search orders"
-            placeholder="Search by order ID or product name…"
-          />
-        </Box>
         <FormControl sx={{ minWidth: 160 }} size="small">
           <InputLabel>Status</InputLabel>
           <Select
             label="Status"
             value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value as OrderStatus | 'all')}
+            onChange={(e) => { setStatusFilter(e.target.value); }}
           >
             <MenuItem value="all">All statuses</MenuItem>
             {ORDER_STATUSES.map((s) => (
@@ -270,10 +267,10 @@ export default function CustomerOrdersPage() {
       ) : orders.length === 0 ? (
         <EmptyState
           Icon={ReceiptLongOutlined}
-          title={debouncedSearch || statusFilter !== 'all' ? 'No orders match your filters' : 'No orders yet'}
+          title={statusFilter !== 'all' ? 'No orders match this status' : 'No orders yet'}
           description={
-            debouncedSearch || statusFilter !== 'all'
-              ? 'Try adjusting the search or status filter.'
+            statusFilter !== 'all'
+              ? 'Try selecting a different status.'
               : 'Browse the catalogue and place your first order.'
           }
           actionLabel="Browse products"
@@ -295,6 +292,17 @@ export default function CustomerOrdersPage() {
           />
         </>
       )}
+
+      <Snackbar
+        open={toast !== null}
+        autoHideDuration={4000}
+        onClose={() => { setToast(null) }}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert severity="info" variant="filled" onClose={() => { setToast(null) }}>
+          {toast}
+        </Alert>
+      </Snackbar>
     </Container>
   )
 }

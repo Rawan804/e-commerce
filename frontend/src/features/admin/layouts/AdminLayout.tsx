@@ -3,6 +3,16 @@ import { Outlet } from 'react-router-dom'
 import Header from '@/shared/components/layout/Header'
 import Footer from '@/shared/components/layout/Footer'
 
+/**
+ * AdminLayout
+ *
+ * Reuses the same Header + Footer as RootLayout.
+ * The Header component already renders the admin sidebar when isAdmin is true,
+ * so no extra sidebar logic is needed here — this layout just provides the
+ * correct structural shell and main content offset.
+ *
+ * No CartDrawer is rendered for the admin area.
+ */
 
 const skipLinkSx = {
   position: 'absolute',

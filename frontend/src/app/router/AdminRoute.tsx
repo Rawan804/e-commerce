@@ -3,6 +3,12 @@ import { useAuth } from '@/features/auth'
 import { useRole } from '@/shared/hooks/useRole'
 import { PATHS } from '@/shared/config/paths'
 
+/**
+ * Guards routes that are only accessible to admin users.
+ * - Not authenticated → redirect to /login (preserves destination in state)
+ * - Authenticated but not admin → redirect to the customer account
+ * - Admin → render <Outlet />
+ */
 export default function AdminRoute() {
   const { isAuthenticated, isLoading } = useAuth()
   const { isAdmin } = useRole()
@@ -15,7 +21,7 @@ export default function AdminRoute() {
   }
 
   if (!isAdmin) {
-    return <Navigate to={PATHS.home} replace />
+    return <Navigate to={PATHS.account} replace />
   }
 
   return <Outlet />

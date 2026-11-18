@@ -2,8 +2,6 @@ export interface User {
   id: number
   name: string
   email: string
-  /** Avatar URL (Pexels for demo data, or a backend URL). Optional. */
-  avatar?: string
   role: 'admin' | 'customer'
   createdAt: string
 }

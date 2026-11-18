@@ -32,14 +32,17 @@ import { useRole } from '@/shared/hooks/useRole'
 import { useCart } from '@/features/cart'
 import MobileNavDrawer from './MobileNavDrawer'
 
-
+/**
+ * Desktop sidebar with a compact mobile header and drawer.
+ * Nav items are filtered by role so admins and customers see different sections.
+ */
 export default function Header() {
   const [drawerOpen, setDrawerOpen] = useState(false)
   const { isAuthenticated, logout } = useAuth()
   const { isAdmin } = useRole()
   const { count, openCart } = useCart()
 
-
+  // Build the correct nav list based on role
   const visibleItems = isAdmin
     ? ADMIN_NAV_ITEMS
     : [

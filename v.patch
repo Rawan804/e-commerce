@@ -1,0 +1,1120 @@
+diff --git a/.env b/.env
+index 45a0f28..cb2a6fd 100644
+--- a/.env
++++ b/.env
+@@ -7,3 +7,9 @@
+ # data and auth runs in demo mode when the API is unreachable.
+ VITE_API_BASE_URL=http://localhost:9000/api/v1
+ VITE_USE_MOCK=false
++
++# ─── Real time (Laravel Reverb) — as seen from the BROWSER, so localhost, not the docker name ───
++VITE_REVERB_APP_KEY=ecommerce-local-key
++VITE_REVERB_HOST=localhost
++VITE_REVERB_PORT=8080
++VITE_REVERB_SCHEME=http
+diff --git a/.env.example b/.env.example
+index 58d57a6..39e4062 100644
+--- a/.env.example
++++ b/.env.example
+@@ -13,3 +13,9 @@ VITE_API_BASE_URL=http://localhost:9000/api/v1
+ # 2. Auth: this project uses JWT bearer tokens.
+ #
+ # 3. Ensure the API URL includes the version prefix /api/v1.
++
++# ─── Real time (Laravel Reverb) — as seen from the BROWSER, so localhost, not the docker name ───
++VITE_REVERB_APP_KEY=ecommerce-local-key
++VITE_REVERB_HOST=localhost
++VITE_REVERB_PORT=8080
++VITE_REVERB_SCHEME=http
+diff --git a/backend/.env.example b/backend/.env.example
+index c0660ea..0624116 100644
+--- a/backend/.env.example
++++ b/backend/.env.example
+@@ -63,3 +63,21 @@ AWS_BUCKET=
+ AWS_USE_PATH_STYLE_ENDPOINT=false
+ 
+ VITE_APP_NAME="${APP_NAME}"
++
++# ─── المتطلب الرابع: البريد الحقيقي (الطابور + العامل) ──────────────────────────
++# هالقيم بتنقرأ من docker compose. حط قيمك الحقيقية بـ backend/.env (ممنوع بالكود أو بـ git).
++# مثال Brevo (smtp-relay.brevo.com:587) أو Gmail (smtp.gmail.com:587 + App Password)
++MAIL_MAILER=smtp
++MAIL_HOST=smtp-relay.brevo.com
++MAIL_PORT=587
++MAIL_USERNAME=
++MAIL_PASSWORD=
++MAIL_FROM_ADDRESS=your-verified-sender@example.com
++MAIL_FROM_NAME="ECommerce"
++
++# RabbitMQ / Reverb (اختياري: لها قيم افتراضية بـ compose.yaml)
++# RABBITMQ_USER=guest
++# RABBITMQ_PASSWORD=guest
++# REVERB_APP_ID=ecommerce
++# REVERB_APP_KEY=ecommerce-local-key
++# REVERB_APP_SECRET=ecommerce-local-secret
+diff --git a/backend/app/Modules/Notifications/Listeners/SendOrderConfirmationEmail.php b/backend/app/Modules/Notifications/Listeners/SendOrderConfirmationEmail.php
+new file mode 100644
+index 0000000..7ba0766
+--- /dev/null
++++ b/backend/app/Modules/Notifications/Listeners/SendOrderConfirmationEmail.php
+@@ -0,0 +1,68 @@
++<?php
++
++namespace App\Modules\Notifications\Listeners;
++
++use App\Modules\Notifications\Mail\OrderConfirmationMail;
++use App\Modules\Orders\Events\OrderPlaced;
++use App\Modules\Orders\Models\Order;
++use Illuminate\Contracts\Queue\ShouldQueue;
++use Illuminate\Queue\InteractsWithQueue;
++use Illuminate\Support\Facades\Cache;
++use Illuminate\Support\Facades\Log;
++use Illuminate\Support\Facades\Mail;
++use Throwable;
++
++/**
++ * يرسل بريد تأكيد الطلب عبر RabbitMQ.
++ *
++ * - الطلب HTTP بس بيحط رسالة بالطابور (سريع) والعامل (container منفصل) بيرسل البريد.
++ * - فشل SMTP => إعادة محاولة مع backoff، وبعد آخر محاولة الرسالة بتروح لـ DLQ.
++ * - العامل ما بيعمل ack للرسالة إلا بعد ما handle() ينتهي بنجاح.
++ */
++class SendOrderConfirmationEmail implements ShouldQueue
++{
++    use InteractsWithQueue;
++
++    public string $queue = 'emails';
++    public int $tries = 5;
++
++    /** rabbitmq دائماً، إلا بالاختبارات (sync) حتى ما نحتاج وسيط رسائل شغّال */
++    public function viaConnection(): string
++    {
++        return (string) config('queue.mail_connection', 'rabbitmq');
++    }
++
++    /** ثواني الانتظار بين المحاولات */
++    public function backoff(): array
++    {
++        return [10, 30, 60, 120];
++    }
++
++    public function handle(OrderPlaced $event): void
++    {
++        // التسليم بـ RabbitMQ هو "مرة على الأقل" (at-least-once): إذا العامل وقع بعد
++        // إرسال البريد وقبل ack بتنعاد الرسالة، فهالعلامة بتمنع التكرار بمعظم الحالات.
++        $sentKey = "mail:order-confirmation:{$event->orderId}";
++        if (Cache::has($sentKey)) {
++            return;
++        }
++
++        $order = Order::with(['items', 'user'])->find($event->orderId);
++        if (! $order || ! $order->user?->email) {
++            return; // ما في شي نرسله (طلب انحذف مثلاً)
++        }
++
++        Mail::to($order->user->email)->send(new OrderConfirmationMail($order));
++
++        Cache::put($sentKey, true, now()->addDays(7));
++    }
++
++    /** بعد استنفاد المحاولات: الرسالة رح تروح لـ DLQ (طابور الرسائل الميتة) */
++    public function failed(OrderPlaced $event, Throwable $e): void
++    {
++        Log::error('Order confirmation email failed permanently; message moved to DLQ.', [
++            'order_id' => $event->orderId,
++            'error' => $e->getMessage(),
++        ]);
++    }
++}
+diff --git a/backend/app/Modules/Notifications/Mail/OrderConfirmationMail.php b/backend/app/Modules/Notifications/Mail/OrderConfirmationMail.php
+new file mode 100644
+index 0000000..e508b97
+--- /dev/null
++++ b/backend/app/Modules/Notifications/Mail/OrderConfirmationMail.php
+@@ -0,0 +1,24 @@
++<?php
++
++namespace App\Modules\Notifications\Mail;
++
++use App\Modules\Orders\Models\Order;
++use Illuminate\Mail\Mailable;
++use Illuminate\Mail\Mailables\Content;
++use Illuminate\Mail\Mailables\Envelope;
++
++/** بريد تأكيد الطلب: بيُرسل من العامل (Worker) وليس من طلب الـ HTTP */
++class OrderConfirmationMail extends Mailable
++{
++    public function __construct(public readonly Order $order) {}
++
++    public function envelope(): Envelope
++    {
++        return new Envelope(subject: "Order #{$this->order->id} confirmed");
++    }
++
++    public function content(): Content
++    {
++        return new Content(view: 'emails.order-confirmation');
++    }
++}
+diff --git a/backend/app/Modules/Notifications/Providers/NotificationsServiceProvider.php b/backend/app/Modules/Notifications/Providers/NotificationsServiceProvider.php
+index aeb27ba..1bf438f 100644
+--- a/backend/app/Modules/Notifications/Providers/NotificationsServiceProvider.php
++++ b/backend/app/Modules/Notifications/Providers/NotificationsServiceProvider.php
+@@ -3,6 +3,7 @@
+ namespace App\Modules\Notifications\Providers;
+ 
+ use App\Modules\Notifications\Listeners\RecordOrderNotification;
++use App\Modules\Notifications\Listeners\SendOrderConfirmationEmail;
+ use App\Modules\Notifications\Models\UserNotification;
+ use App\Modules\Notifications\Policies\NotificationPolicy;
+ use App\Modules\Orders\Events\OrderPlaced;
+@@ -23,6 +24,9 @@ public function boot(): void
+         Event::listen(OrderPlaced::class, [RecordOrderNotification::class, 'handlePlaced']);
+         Event::listen(OrderStatusChanged::class, [RecordOrderNotification::class, 'handleStatusChanged']);
+ 
++        // المتطلب الرابع: بريد التأكيد عبر RabbitMQ (الـ Worker هو اللي بيرسله)
++        Event::listen(OrderPlaced::class, SendOrderConfirmationEmail::class);
++
+         Route::middleware('api')->prefix('api/v1')->group(__DIR__.'/../Routes/api.php');
+     }
+ }
+\ No newline at end of file
+diff --git a/backend/app/Modules/Realtime/Events/OrderCreatedBroadcast.php b/backend/app/Modules/Realtime/Events/OrderCreatedBroadcast.php
+new file mode 100644
+index 0000000..47b8a1e
+--- /dev/null
++++ b/backend/app/Modules/Realtime/Events/OrderCreatedBroadcast.php
+@@ -0,0 +1,33 @@
++<?php
++
++namespace App\Modules\Realtime\Events;
++
++use App\Modules\Orders\Http\Resources\OrderResource;
++use App\Modules\Orders\Models\Order;
++use Illuminate\Broadcasting\InteractsWithSockets;
++use Illuminate\Broadcasting\PrivateChannel;
++use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
++use Illuminate\Foundation\Events\Dispatchable;
++
++/** طلب جديد => لوحة المسؤول (قناة خاصة: المسؤولون فقط) */
++final class OrderCreatedBroadcast implements ShouldBroadcastNow
++{
++    use Dispatchable, InteractsWithSockets;
++
++    public function __construct(public readonly Order $order) {}
++
++    public function broadcastOn(): array
++    {
++        return [new PrivateChannel('admin.orders')];
++    }
++
++    public function broadcastAs(): string
++    {
++        return 'order.placed';
++    }
++
++    public function broadcastWith(): array
++    {
++        return ['order' => (new OrderResource($this->order))->resolve()];
++    }
++}
+diff --git a/backend/app/Modules/Realtime/Events/OrderStatusBroadcast.php b/backend/app/Modules/Realtime/Events/OrderStatusBroadcast.php
+new file mode 100644
+index 0000000..195d614
+--- /dev/null
++++ b/backend/app/Modules/Realtime/Events/OrderStatusBroadcast.php
+@@ -0,0 +1,41 @@
++<?php
++
++namespace App\Modules\Realtime\Events;
++
++use App\Modules\Orders\Http\Resources\OrderResource;
++use App\Modules\Orders\Models\Order;
++use Illuminate\Broadcasting\InteractsWithSockets;
++use Illuminate\Broadcasting\PrivateChannel;
++use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
++use Illuminate\Foundation\Events\Dispatchable;
++
++/** تغيّر حالة الطلب => صاحب الطلب فقط (قناة خاصة لكل طلب) */
++final class OrderStatusBroadcast implements ShouldBroadcastNow
++{
++    use Dispatchable, InteractsWithSockets;
++
++    public function __construct(
++        public readonly Order $order,
++        public readonly string $from,
++        public readonly string $to,
++    ) {}
++
++    public function broadcastOn(): array
++    {
++        return [new PrivateChannel('orders.'.$this->order->id)];
++    }
++
++    public function broadcastAs(): string
++    {
++        return 'order.status_changed';
++    }
++
++    public function broadcastWith(): array
++    {
++        return [
++            'order' => (new OrderResource($this->order))->resolve(),
++            'from' => $this->from,
++            'to' => $this->to,
++        ];
++    }
++}
+diff --git a/backend/app/Modules/Realtime/Listeners/BroadcastOrderEvents.php b/backend/app/Modules/Realtime/Listeners/BroadcastOrderEvents.php
+new file mode 100644
+index 0000000..11ce283
+--- /dev/null
++++ b/backend/app/Modules/Realtime/Listeners/BroadcastOrderEvents.php
+@@ -0,0 +1,52 @@
++<?php
++
++namespace App\Modules\Realtime\Listeners;
++
++use App\Modules\Orders\Events\OrderPlaced;
++use App\Modules\Orders\Events\OrderStatusChanged;
++use App\Modules\Orders\Models\Order;
++use App\Modules\Realtime\Events\OrderCreatedBroadcast;
++use App\Modules\Realtime\Events\OrderStatusBroadcast;
++use Illuminate\Support\Facades\Log;
++use Throwable;
++
++/**
++ * يحوّل أحداث الطلبات إلى رسائل لحظية عبر Reverb.
++ *
++ * عن قصد مو بالطابور: البث لازم يوصل فوراً حتى لو الـ Worker واقف.
++ * وإذا Reverb واقع ما بنكسر الطلب: بنسجّل الخطأ وبنكمّل.
++ */
++class BroadcastOrderEvents
++{
++    public function handlePlaced(OrderPlaced $event): void
++    {
++        $this->safely('order.placed', $event->orderId, function () use ($event) {
++            $order = Order::with(['items', 'user'])->find($event->orderId);
++            if ($order) {
++                OrderCreatedBroadcast::dispatch($order);
++            }
++        });
++    }
++
++    public function handleStatusChanged(OrderStatusChanged $event): void
++    {
++        $this->safely('order.status_changed', $event->orderId, function () use ($event) {
++            $order = Order::with(['items', 'user'])->find($event->orderId);
++            if ($order) {
++                OrderStatusBroadcast::dispatch($order, $event->from, $event->to);
++            }
++        });
++    }
++
++    private function safely(string $name, int $orderId, callable $fn): void
++    {
++        try {
++            $fn();
++        } catch (Throwable $e) {
++            Log::warning("Realtime broadcast '{$name}' failed.", [
++                'order_id' => $orderId,
++                'error' => $e->getMessage(),
++            ]);
++        }
++    }
++}
+diff --git a/backend/app/Modules/Realtime/Providers/RealtimeServiceProvider.php b/backend/app/Modules/Realtime/Providers/RealtimeServiceProvider.php
+new file mode 100644
+index 0000000..7b3526d
+--- /dev/null
++++ b/backend/app/Modules/Realtime/Providers/RealtimeServiceProvider.php
+@@ -0,0 +1,27 @@
++<?php
++
++namespace App\Modules\Realtime\Providers;
++
++use App\Modules\Orders\Events\OrderPlaced;
++use App\Modules\Orders\Events\OrderStatusChanged;
++use App\Modules\Realtime\Listeners\BroadcastOrderEvents;
++use App\Modules\Realtime\Support\ChannelAuthorizer;
++use App\Modules\Users\Models\User;
++use Illuminate\Support\Facades\Broadcast;
++use Illuminate\Support\Facades\Event;
++use Illuminate\Support\ServiceProvider;
++
++class RealtimeServiceProvider extends ServiceProvider
++{
++    public function boot(): void
++    {
++        Event::listen(OrderPlaced::class, [BroadcastOrderEvents::class, 'handlePlaced']);
++        Event::listen(OrderStatusChanged::class, [BroadcastOrderEvents::class, 'handleStatusChanged']);
++
++        // POST /api/v1/broadcasting/auth  — المتصفح بيستدعيه (مع JWT) قبل الاشتراك بأي قناة خاصة
++        Broadcast::routes(['prefix' => 'api/v1', 'middleware' => ['api', 'auth:api']]);
++
++        Broadcast::channel('admin.orders', fn (User $user) => ChannelAuthorizer::canJoinAdminOrders($user));
++        Broadcast::channel('orders.{orderId}', fn (User $user, int $orderId) => ChannelAuthorizer::canJoinOrder($user, $orderId));
++    }
++}
+diff --git a/backend/app/Modules/Realtime/Support/ChannelAuthorizer.php b/backend/app/Modules/Realtime/Support/ChannelAuthorizer.php
+new file mode 100644
+index 0000000..7a073fc
+--- /dev/null
++++ b/backend/app/Modules/Realtime/Support/ChannelAuthorizer.php
+@@ -0,0 +1,25 @@
++<?php
++
++namespace App\Modules\Realtime\Support;
++
++use App\Modules\Orders\Models\Order;
++use App\Modules\Users\Models\User;
++
++/** منطق صلاحيات القنوات (منفصل حتى يتختبر بسهولة) */
++final class ChannelAuthorizer
++{
++    /** قناة لوحة المسؤول: بالدور */
++    public static function canJoinAdminOrders(User $user): bool
++    {
++        return $user->isAdmin();
++    }
++
++    /** قناة طلب معيّن: بالملكية (صاحب الطلب فقط) */
++    public static function canJoinOrder(User $user, int $orderId): bool
++    {
++        return Order::query()
++            ->whereKey($orderId)
++            ->where('user_id', $user->id)
++            ->exists();
++    }
++}
+diff --git a/backend/bootstrap/providers.php b/backend/bootstrap/providers.php
+index 3ea947b..dad1a23 100644
+--- a/backend/bootstrap/providers.php
++++ b/backend/bootstrap/providers.php
+@@ -7,4 +7,5 @@
+     App\Modules\Products\Providers\ProductsServiceProvider::class,
+     App\Modules\Orders\Providers\OrdersServiceProvider::class,
+     App\Modules\Notifications\Providers\NotificationsServiceProvider::class,
++    App\Modules\Realtime\Providers\RealtimeServiceProvider::class,
+ ];
+\ No newline at end of file
+diff --git a/backend/compose.yaml b/backend/compose.yaml
+index 93b8bec..baf3823 100644
+--- a/backend/compose.yaml
++++ b/backend/compose.yaml
+@@ -1,4 +1,28 @@
+ 
++# متغيرات المتطلب الرابع (الطوابير + اللحظي + البريد) مشتركة بين app و worker و reverb
++x-async-env: &async-env
++  # ---- RabbitMQ ----
++  RABBITMQ_HOST: rabbitmq
++  RABBITMQ_PORT: "5672"
++  RABBITMQ_USER: ${RABBITMQ_USER:-guest}
++  RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-guest}
++  # ---- Reverb (WebSocket) ---- من داخل شبكة docker الـ Laravel بيوصل لـ reverb:8080
++  BROADCAST_CONNECTION: reverb
++  REVERB_APP_ID: ${REVERB_APP_ID:-ecommerce}
++  REVERB_APP_KEY: ${REVERB_APP_KEY:-ecommerce-local-key}
++  REVERB_APP_SECRET: ${REVERB_APP_SECRET:-ecommerce-local-secret}
++  REVERB_HOST: reverb
++  REVERB_PORT: "8080"
++  REVERB_SCHEME: http
++  # ---- البريد الحقيقي: القيم من backend/.env (ما بتنكتب بالكود) ----
++  MAIL_MAILER: ${MAIL_MAILER:-smtp}
++  MAIL_HOST: ${MAIL_HOST:-smtp-relay.brevo.com}
++  MAIL_PORT: ${MAIL_PORT:-587}
++  MAIL_USERNAME: ${MAIL_USERNAME:-}
++  MAIL_PASSWORD: ${MAIL_PASSWORD:-}
++  MAIL_FROM_ADDRESS: ${MAIL_FROM_ADDRESS:-no-reply@example.com}
++  MAIL_FROM_NAME: ${MAIL_FROM_NAME:-ECommerce}
++
+ services:
+   phpmyadmin:
+     image: phpmyadmin:latest
+@@ -26,6 +50,7 @@ services:
+       - .:/var/www/html
+       - /var/www/html/vendor
+     environment:
++      <<: *async-env
+       APP_ENV: local
+       APP_DEBUG: "true"
+       APP_URL: http://localhost:9000
+@@ -58,6 +83,8 @@ services:
+         condition: service_healthy
+       warehouse:
+         condition: service_healthy
++      rabbitmq:
++        condition: service_healthy
+ 
+   queue:
+     build:
+@@ -94,6 +121,87 @@ services:
+       warehouse:
+         condition: service_healthy
+ 
++  # ------------------------------------------------------------------
++  # المتطلب الرابع: المعالجة غير المتزامنة والتحديثات اللحظية
++  # ------------------------------------------------------------------
++  rabbitmq:
++    image: rabbitmq:3.13-management-alpine
++    container_name: docker-ecommerce-rabbitmq
++    ports:
++      - "5672:5672"
++      - "15672:15672"     # واجهة الإدارة: http://localhost:15672 (guest / guest)
++    environment:
++      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-guest}
++      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-guest}
++    volumes:
++      - rabbitmq_data:/var/lib/rabbitmq     # الرسائل ما بتضيع إذا انعادت تشغيل RabbitMQ
++    healthcheck:
++      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
++      interval: 10s
++      timeout: 10s
++      retries: 10
++
++  # العامل (Worker): برنامج منفصل بحاويته، هو اللي بيرسل البريد من طابور emails
++  worker:
++    build:
++      context: .
++      dockerfile: Dockerfile
++    container_name: docker-ecommerce-worker
++    # 1) تجهيز الـ DLX و DLQ (آمن لو موجودين)  2) استهلاك طابور emails
++    command:
++      - sh
++      - -c
++      - >-
++        php artisan rabbitmq:exchange-declare dlx &&
++        php artisan rabbitmq:queue-declare emails.dlq &&
++        php artisan rabbitmq:queue-bind emails.dlq dlx --routing-key=emails.failed &&
++        exec php artisan queue:work rabbitmq --queue=emails --sleep=1 --timeout=60
++    restart: unless-stopped
++    volumes:
++      - .:/var/www/html
++      - /var/www/html/vendor
++    environment:
++      <<: *async-env
++      APP_ENV: local
++      APP_DEBUG: "true"
++      APP_URL: http://localhost:9000
++      DB_CONNECTION: mysql
++      DB_HOST: db
++      DB_PORT: 3306
++      DB_DATABASE: ecommerce
++      DB_USERNAME: ecommerce_user
++      DB_PASSWORD: ecommerce_password
++      RUN_DATABASE_SETUP: "false"
++      CACHE_STORE: ${CACHE_STORE:-redis}      # علامة "انرسل البريد" (منع التكرار)
++      REDIS_CLIENT: phpredis
++      REDIS_HOST: redis
++      DB_READ_HOST: ${DB_READ_HOST:-db}
++    depends_on:
++      db:
++        condition: service_healthy
++      redis:
++        condition: service_healthy
++      rabbitmq:
++        condition: service_healthy
++
++  # خادم WebSocket جاهز (Laravel Reverb): ما كتبناه من الصفر
++  reverb:
++    build:
++      context: .
++      dockerfile: Dockerfile
++    container_name: docker-ecommerce-reverb
++    command: ["php", "artisan", "reverb:start", "--host=0.0.0.0", "--port=8080"]
++    restart: unless-stopped
++    ports:
++      - "8080:8080"       # المتصفح بيوصل له عبر localhost:8080
++    volumes:
++      - .:/var/www/html
++      - /var/www/html/vendor
++    environment:
++      <<: *async-env
++      APP_ENV: local
++      RUN_DATABASE_SETUP: "false"
++
+   db:
+     image: mysql:8.0
+     container_name: docker-ecommerce-db
+@@ -214,6 +322,7 @@ services:
+       - app
+ 
+ volumes:
++  rabbitmq_data:
+   ecommerce_data:
+   ecommerce_replica_data:
+   warehouse_data:
+diff --git a/backend/config/broadcasting.php b/backend/config/broadcasting.php
+new file mode 100644
+index 0000000..63177b7
+--- /dev/null
++++ b/backend/config/broadcasting.php
+@@ -0,0 +1,31 @@
++<?php
++
++return [
++
++    'default' => env('BROADCAST_CONNECTION', 'null'),
++
++    'connections' => [
++
++        'reverb' => [
++            'driver' => 'reverb',
++            'key' => env('REVERB_APP_KEY'),
++            'secret' => env('REVERB_APP_SECRET'),
++            'app_id' => env('REVERB_APP_ID'),
++            'options' => [
++                // عنوان Reverb كما يراه الـ Laravel (داخل شبكة docker: اسم الحاوية reverb)
++                'host' => env('REVERB_HOST', 'reverb'),
++                'port' => env('REVERB_PORT', 8080),
++                'scheme' => env('REVERB_SCHEME', 'http'),
++                'useTLS' => env('REVERB_SCHEME', 'http') === 'https',
++            ],
++            // مهلة قصيرة: إذا Reverb واقع ما نعلّق طلب الزبون
++            'client_options' => ['timeout' => 2, 'connect_timeout' => 1],
++        ],
++
++        'log' => ['driver' => 'log'],
++
++        'null' => ['driver' => 'null'],
++
++    ],
++
++];
+diff --git a/backend/config/mail.php b/backend/config/mail.php
+index e32e88d..8a1e56b 100644
+--- a/backend/config/mail.php
++++ b/backend/config/mail.php
+@@ -45,7 +45,7 @@
+             'port' => env('MAIL_PORT', 2525),
+             'username' => env('MAIL_USERNAME'),
+             'password' => env('MAIL_PASSWORD'),
+-            'timeout' => null,
++            'timeout' => (int) env('MAIL_TIMEOUT', 15),
+             'local_domain' => env('MAIL_EHLO_DOMAIN', parse_url((string) env('APP_URL', 'http://localhost'), PHP_URL_HOST)),
+         ],
+ 
+diff --git a/backend/config/queue.php b/backend/config/queue.php
+index 79c2c0a..3a07baf 100644
+--- a/backend/config/queue.php
++++ b/backend/config/queue.php
+@@ -15,6 +15,9 @@
+ 
+     'default' => env('QUEUE_CONNECTION', 'database'),
+ 
++    // اتصال طابور البريد (المتطلب الرابع): rabbitmq، وبالاختبارات sync
++    'mail_connection' => env('MAIL_QUEUE_CONNECTION', 'rabbitmq'),
++
+     /*
+     |--------------------------------------------------------------------------
+     | Queue Connections
+@@ -73,6 +76,30 @@
+             'after_commit' => false,
+         ],
+ 
++        'rabbitmq' => [
++            'driver' => 'rabbitmq',
++            'queue' => env('RABBITMQ_QUEUE', 'emails'),
++            'connection' => PhpAmqpLib\Connection\AMQPLazyConnection::class,
++            'hosts' => [
++                [
++                    'host' => env('RABBITMQ_HOST', 'rabbitmq'),
++                    'port' => env('RABBITMQ_PORT', 5672),
++                    'user' => env('RABBITMQ_USER', 'guest'),
++                    'password' => env('RABBITMQ_PASSWORD', 'guest'),
++                    'vhost' => env('RABBITMQ_VHOST', '/'),
++                ],
++            ],
++            'options' => [
++                'queue' => [
++                    // الرسالة اللي بتفشل نهائياً بتروح للـ Dead Letter Exchange بدل ما تنحذف
++                    'reroute_failed' => true,
++                    'failed_exchange' => env('RABBITMQ_DLX', 'dlx'),
++                    'failed_routing_key' => '%s.failed',   // emails.failed => طابور emails.dlq
++                ],
++            ],
++            'after_commit' => false,
++        ],
++
+         'deferred' => [
+             'driver' => 'deferred',
+         ],
+diff --git a/backend/phpunit.xml b/backend/phpunit.xml
+index 6057b31..ddd1e1e 100644
+--- a/backend/phpunit.xml
++++ b/backend/phpunit.xml
+@@ -28,6 +28,7 @@
+         <env name="DB_URL" value=""/>
+         <env name="MAIL_MAILER" value="array"/>
+         <env name="QUEUE_CONNECTION" value="sync"/>
++        <env name="MAIL_QUEUE_CONNECTION" value="sync"/>
+         <env name="SESSION_DRIVER" value="array"/>
+         <env name="PULSE_ENABLED" value="false"/>
+         <env name="TELESCOPE_ENABLED" value="false"/>
+diff --git a/backend/resources/views/emails/order-confirmation.blade.php b/backend/resources/views/emails/order-confirmation.blade.php
+new file mode 100644
+index 0000000..7f7d8b7
+--- /dev/null
++++ b/backend/resources/views/emails/order-confirmation.blade.php
+@@ -0,0 +1,30 @@
++<!DOCTYPE html>
++<html lang="en">
++<body style="font-family: Arial, sans-serif; color: #222; max-width: 560px; margin: auto;">
++    <h2>Thank you, {{ $order->user->name }}!</h2>
++    <p>We received your order <strong>#{{ $order->id }}</strong>. We will notify you when its status changes.</p>
++
++    <table width="100%" cellpadding="8" cellspacing="0" style="border-collapse: collapse;">
++        <thead>
++            <tr style="background: #f3f3f3; text-align: left;">
++                <th>Item</th><th>Qty</th><th style="text-align: right;">Subtotal</th>
++            </tr>
++        </thead>
++        <tbody>
++            @foreach ($order->items as $item)
++                <tr style="border-bottom: 1px solid #eee;">
++                    <td>{{ $item->product_name }}</td>
++                    <td>{{ $item->quantity }}</td>
++                    <td style="text-align: right;">{{ number_format((float) $item->unit_price * $item->quantity, 2) }}</td>
++                </tr>
++            @endforeach
++        </tbody>
++        <tfoot>
++            <tr>
++                <td colspan="2"><strong>Total</strong></td>
++                <td style="text-align: right;"><strong>{{ number_format((float) $order->total, 2) }}</strong></td>
++            </tr>
++        </tfoot>
++    </table>
++</body>
++</html>
+diff --git a/backend/tests/Feature/Api/AsyncAndRealtimeTest.php b/backend/tests/Feature/Api/AsyncAndRealtimeTest.php
+new file mode 100644
+index 0000000..7d165ec
+--- /dev/null
++++ b/backend/tests/Feature/Api/AsyncAndRealtimeTest.php
+@@ -0,0 +1,85 @@
++<?php
++
++namespace Tests\Feature\Api;
++
++use App\Modules\Notifications\Listeners\SendOrderConfirmationEmail;
++use App\Modules\Notifications\Mail\OrderConfirmationMail;
++use App\Modules\Orders\Events\OrderPlaced;
++use App\Modules\Realtime\Support\ChannelAuthorizer;
++use Illuminate\Events\CallQueuedListener;
++use Illuminate\Support\Facades\Cache;
++use Illuminate\Support\Facades\Mail;
++use Illuminate\Support\Facades\Queue;
++
++/** المتطلب الرابع: الطابور (البريد) + صلاحيات القنوات اللحظية */
++class AsyncAndRealtimeTest extends ApiTestCase
++{
++    public function test_placing_an_order_sends_the_confirmation_email_through_the_listener(): void
++    {
++        Mail::fake();
++        $customer = $this->makeUser();
++
++        $orderId = $this->placeOrder($customer);
++
++        Mail::assertSent(OrderConfirmationMail::class, fn ($m) => $m->hasTo($customer->email) && $m->order->id === $orderId);
++    }
++
++    public function test_the_email_listener_is_pushed_to_the_emails_queue_not_run_inline(): void
++    {
++        config(['queue.mail_connection' => 'database']);   // أي اتصال غير sync
++        Queue::fake();
++        Mail::fake();
++
++        $this->placeOrder($this->makeUser());
++
++        Queue::assertPushedOn('emails', CallQueuedListener::class,
++            fn ($job) => $job->class === SendOrderConfirmationEmail::class);
++        Mail::assertNothingSent(); // الرد رجع للزبون قبل ما يتبعت أي بريد
++    }
++
++    public function test_redelivered_message_does_not_send_a_second_email(): void
++    {
++        Mail::fake();
++        $customer = $this->makeUser();
++        $orderId = $this->placeOrder($customer);   // أول إرسال (inline بالاختبار)
++
++        // نفس الرسالة انعادت (مثلاً العامل وقع قبل ack)
++        (new SendOrderConfirmationEmail())->handle(new OrderPlaced($orderId, $customer->id, '21.00'));
++
++        Mail::assertSent(OrderConfirmationMail::class, 1);
++    }
++
++    public function test_failed_mail_throws_so_the_message_is_retried_and_not_marked_as_sent(): void
++    {
++        $customer = $this->makeUser();
++        $orderId = $this->placeOrder($customer);
++        Cache::flush();
++
++        Mail::shouldReceive('to')->andThrow(new \RuntimeException('SMTP down'));
++
++        $this->expectException(\RuntimeException::class);
++        try {
++            (new SendOrderConfirmationEmail())->handle(new OrderPlaced($orderId, $customer->id, '21.00'));
++        } finally {
++            $this->assertFalse(Cache::has("mail:order-confirmation:{$orderId}"));
++        }
++    }
++
++    public function test_only_admins_can_join_the_admin_orders_channel(): void
++    {
++        $this->assertTrue(ChannelAuthorizer::canJoinAdminOrders($this->makeUser('admin')));
++        $this->assertFalse(ChannelAuthorizer::canJoinAdminOrders($this->makeUser('customer')));
++    }
++
++    public function test_only_the_owner_can_join_an_order_channel(): void
++    {
++        $owner = $this->makeUser();
++        $other = $this->makeUser();
++        $admin = $this->makeUser('admin');
++        $orderId = $this->placeOrder($owner);
++
++        $this->assertTrue(ChannelAuthorizer::canJoinOrder($owner, $orderId));
++        $this->assertFalse(ChannelAuthorizer::canJoinOrder($other, $orderId));
++        $this->assertFalse(ChannelAuthorizer::canJoinOrder($admin, $orderId)); // الأدمن عنده قناته الخاصة
++    }
++}
+diff --git a/package.json b/package.json
+index f8dcc50..ba721bf 100644
+--- a/package.json
++++ b/package.json
+@@ -19,6 +19,8 @@
+     "@mui/icons-material": "9.5.0",
+     "@mui/material": "9.5.0",
+     "axios": "1.20.0",
++    "laravel-echo": "^2.6.3",
++    "pusher-js": "^8.6.0",
+     "react": "^19.2.8",
+     "react-dom": "^19.2.8",
+     "react-router-dom": "7.18.4",
+diff --git a/src/features/admin/pages/AdminOrdersPage.tsx b/src/features/admin/pages/AdminOrdersPage.tsx
+index 56b2ca9..3e6c6ee 100644
+--- a/src/features/admin/pages/AdminOrdersPage.tsx
++++ b/src/features/admin/pages/AdminOrdersPage.tsx
+@@ -22,7 +22,7 @@ import {
+   TableRow,
+   Typography,
+ } from '@mui/material'
+-import { isOrderServerError, NEXT_ORDER_STATUSES, orderErrorMessage, ordersService, ORDER_STATUSES, type Order, type OrderStatus } from '@/features/orders'
++import { isOrderServerError, NEXT_ORDER_STATUSES, orderErrorMessage, ordersService, ORDER_STATUSES, useAdminOrderPlaced, type Order, type OrderStatus } from '@/features/orders'
+ import { formatCurrency, formatDate } from '@/shared/lib/formatters'
+ import ErrorMessage from '@/shared/components/feedback/ErrorMessage'
+ import EmptyState from '@/shared/components/feedback/EmptyState'
+@@ -78,6 +78,15 @@ export default function AdminOrdersPage() {
+ 
+   useEffect(() => { void load() }, [load])
+ 
++  // Real time: a new order appears here the moment a customer places it (no refresh).
++  useAdminOrderPlaced((order) => {
++    setToast({ msg: `New order #${order.id} from ${order.userName ?? 'a customer'}`, severity: 'success' })
++    const matchesView = page === 1 && (statusFilter === 'all' || statusFilter === 'pending')
++    if (!matchesView || orders.some((o) => o.id === order.id)) return
++    setOrders((prev) => [order, ...prev].slice(0, PER_PAGE))
++    setTotal((t) => t + 1)
++  })
++
+   async function handleStatusChange(orderId: string, status: OrderStatus) {
+     setStatusLoading(true)
+     try {
+diff --git a/src/features/auth/context/AuthContext.tsx b/src/features/auth/context/AuthContext.tsx
+index c6305c7..82d2c1c 100644
+--- a/src/features/auth/context/AuthContext.tsx
++++ b/src/features/auth/context/AuthContext.tsx
+@@ -8,6 +8,7 @@ import {
+ } from 'react'
+ import type { AuthState, AuthUser } from '../types/auth.types'
+ import { authService } from '../services/authService'
++import { disconnectRealtime } from '@/shared/lib/realtime'
+ 
+ // ─── Context shape ────────────────────────────────────────────────────────────
+ interface AuthContextValue extends AuthState {
+@@ -125,6 +126,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
+   }, [])
+ 
+   const logout = useCallback(() => {
++    disconnectRealtime()
+     authService.logout()
+     clearStoredAuth()
+     setState({
+diff --git a/src/features/customer/pages/CustomerOrdersPage.tsx b/src/features/customer/pages/CustomerOrdersPage.tsx
+index f5ef8e6..f4b2d81 100644
+--- a/src/features/customer/pages/CustomerOrdersPage.tsx
++++ b/src/features/customer/pages/CustomerOrdersPage.tsx
+@@ -11,13 +11,14 @@ import {
+   MenuItem,
+   Select,
+   Skeleton,
++  Snackbar,
+   Stack,
+   Typography,
+ } from '@mui/material'
+ import ExpandMoreOutlined from '@mui/icons-material/ExpandMoreOutlined'
+ import ExpandLessOutlined from '@mui/icons-material/ExpandLessOutlined'
+ import ReceiptLongOutlined from '@mui/icons-material/ReceiptLongOutlined'
+-import { orderErrorMessage, ordersService, ORDER_STATUSES, type Order, type OrderStatus } from '@/features/orders'
++import { orderErrorMessage, ordersService, ORDER_STATUSES, useOrderStatusUpdates, type Order, type OrderStatus } from '@/features/orders'
+ import { formatCurrency, formatRelativeDate } from '@/shared/lib/formatters'
+ import { PATHS } from '@/shared/config/paths'
+ import ErrorMessage from '@/shared/components/feedback/ErrorMessage'
+@@ -188,6 +189,7 @@ export default function CustomerOrdersPage() {
+   const [totalPages, setTotalPages] = useState(1)
+   const [loading, setLoading] = useState(true)
+   const [error, setError] = useState<string | null>(null)
++  const [toast, setToast] = useState<string | null>(null)
+ 
+   useEffect(() => { setPage(1) }, [statusFilter])
+ 
+@@ -212,6 +214,17 @@ export default function CustomerOrdersPage() {
+ 
+   useEffect(() => { void load() }, [load])
+ 
++  // Real time: when an admin changes the status of one of MY orders, update it here instantly.
++  useOrderStatusUpdates(
++    orders.map((o) => o.id),
++    (updated, _from, to) => {
++      setOrders((prev) =>
++        prev.map((o) => (o.id === updated.id ? { ...o, status: updated.status, updatedAt: updated.updatedAt } : o)),
++      )
++      setToast(`Order #${updated.id} is now ${to}.`)
++    },
++  )
++
+   return (
+     <Container maxWidth="lg" sx={{ py: { xs: 4, md: 6 } }}>
+       <Stack direction="row" spacing={1.5} sx={{ mb: 0.5, alignItems: 'center' }}>
+@@ -279,6 +292,17 @@ export default function CustomerOrdersPage() {
+           />
+         </>
+       )}
++
++      <Snackbar
++        open={toast !== null}
++        autoHideDuration={4000}
++        onClose={() => { setToast(null) }}
++        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
++      >
++        <Alert severity="info" variant="filled" onClose={() => { setToast(null) }}>
++          {toast}
++        </Alert>
++      </Snackbar>
+     </Container>
+   )
+ }
+diff --git a/src/features/orders/hooks/useOrderRealtime.ts b/src/features/orders/hooks/useOrderRealtime.ts
+new file mode 100644
+index 0000000..8e434fb
+--- /dev/null
++++ b/src/features/orders/hooks/useOrderRealtime.ts
+@@ -0,0 +1,55 @@
++import { useEffect, useRef } from 'react'
++import { getEcho } from '@/shared/lib/realtime'
++import { orderFromDto, type OrderDto } from '../services/ordersService'
++import type { Order } from '../types/order.types'
++
++interface OrderPlacedPayload { order: OrderDto }
++interface OrderStatusPayload { order: OrderDto; from: string; to: string }
++
++/**
++ * Admin dashboard: fires when ANY customer places a new order.
++ * Channel `admin.orders` is private — only admins are authorised by the backend.
++ */
++export function useAdminOrderPlaced(onPlaced: (order: Order) => void): void {
++  const handler = useRef(onPlaced)
++  useEffect(() => { handler.current = onPlaced })
++
++  useEffect(() => {
++    const channel = getEcho()
++      .private('admin.orders')
++      .listen('.order.placed', (e: OrderPlacedPayload) => {
++        handler.current(orderFromDto(e.order))
++      })
++    return () => {
++      channel.stopListening('.order.placed')
++      getEcho().leave('admin.orders')
++    }
++  }, [])
++}
++
++/**
++ * Customer order pages: fires when the status of one of THEIR orders changes.
++ * One private channel per order (`orders.{id}`) — only the owner is authorised.
++ */
++export function useOrderStatusUpdates(
++  orderIds: string[],
++  onChange: (order: Order, from: string, to: string) => void,
++): void {
++  const handler = useRef(onChange)
++  useEffect(() => { handler.current = onChange })
++
++  const key = orderIds.join(',')
++  useEffect(() => {
++    const ids = key ? key.split(',') : []
++    for (const id of ids) {
++      getEcho()
++        .private(`orders.${id}`)
++        .listen('.order.status_changed', (e: OrderStatusPayload) => {
++          handler.current(orderFromDto(e.order), e.from, e.to)
++        })
++    }
++    return () => {
++      for (const id of ids) getEcho().leave(`orders.${id}`)
++    }
++  }, [key])
++}
+diff --git a/src/features/orders/index.ts b/src/features/orders/index.ts
+index a565471..85c6b4a 100644
+--- a/src/features/orders/index.ts
++++ b/src/features/orders/index.ts
+@@ -1,5 +1,7 @@
+ export { ordersService } from './services/ordersService'
+-export { isOrderServerError, orderErrorMessage } from './services/ordersService'
++export { isOrderServerError, orderErrorMessage, orderFromDto } from './services/ordersService'
++export type { OrderDto } from './services/ordersService'
++export { useAdminOrderPlaced, useOrderStatusUpdates } from './hooks/useOrderRealtime'
+ export type {
+   Order,
+   OrderItem,
+diff --git a/src/features/orders/services/ordersService.ts b/src/features/orders/services/ordersService.ts
+index ea9aae2..a8f5770 100644
+--- a/src/features/orders/services/ordersService.ts
++++ b/src/features/orders/services/ordersService.ts
+@@ -39,7 +39,7 @@ interface OrderItemDto {
+   subtotal: string | number
+ }
+ 
+-interface OrderDto {
++export interface OrderDto {
+   id: number
+   user_id: number
+   user_name?: string | null
+@@ -105,7 +105,7 @@ function mapOrderItem(item: OrderItemDto): OrderItem {
+   }
+ }
+ 
+-function mapOrder(dto: OrderDto): Order {
++export function orderFromDto(dto: OrderDto): Order {
+   return {
+     id: String(dto.id),
+     userId: dto.user_id,
+@@ -129,7 +129,7 @@ async function list(query: OrderQuery): Promise<OrderPageResult> {
+     },
+   })
+   return {
+-    items: res.data.map(mapOrder),
++    items: res.data.map(orderFromDto),
+     total: res.meta.total,
+     page: res.meta.current_page,
+     perPage: res.meta.per_page,
+@@ -140,7 +140,7 @@ async function list(query: OrderQuery): Promise<OrderPageResult> {
+ async function getById(id: string): Promise<Order | null> {
+   try {
+     const res = await apiClient.get<OrderDtoEnvelope>(`/orders/${id}`)
+-    return mapOrder(res.data)
++    return orderFromDto(res.data)
+   } catch (e) {
+     if ((e as { status?: number }).status === 404) return null
+     throw e
+@@ -175,12 +175,12 @@ async function create(payload: CreateOrderPayload): Promise<Order> {
+       quantity: item.qty,
+     })),
+   })
+-  return mapOrder(res.data)
++  return orderFromDto(res.data)
+ }
+ 
+ async function updateStatus(id: string, status: OrderStatus): Promise<Order> {
+   const res = await apiClient.patch<OrderDtoEnvelope>(`/orders/${id}/status`, { status })
+-  return mapOrder(res.data)
++  return orderFromDto(res.data)
+ }
+ 
+ export const ordersService = { list, getById, create, updateStatus } as const
+diff --git a/src/shared/config/env.ts b/src/shared/config/env.ts
+index 5904aef..3f8952f 100644
+--- a/src/shared/config/env.ts
++++ b/src/shared/config/env.ts
+@@ -2,12 +2,19 @@
+ // All import.meta.env reads go through this module only.
+ //
+ //   VITE_API_BASE_URL  Laravel API root, e.g. http://localhost:9000/api/v1
++//   VITE_REVERB_*      Reverb WebSocket server as seen from the BROWSER (localhost:8080)
+ 
+ const apiBaseUrl =
+   (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? 'http://localhost:9000/api/v1'
+ 
+ export const env = {
+   apiBaseUrl,
++  reverb: {
++    key: (import.meta.env.VITE_REVERB_APP_KEY as string | undefined) ?? 'ecommerce-local-key',
++    host: (import.meta.env.VITE_REVERB_HOST as string | undefined) ?? 'localhost',
++    port: Number((import.meta.env.VITE_REVERB_PORT as string | undefined) ?? 8080),
++    scheme: (import.meta.env.VITE_REVERB_SCHEME as string | undefined) ?? 'http',
++  },
+   isDev: import.meta.env.DEV,
+ } as const
+ 
+diff --git a/src/shared/lib/realtime.ts b/src/shared/lib/realtime.ts
+new file mode 100644
+index 0000000..86cf80a
+--- /dev/null
++++ b/src/shared/lib/realtime.ts
+@@ -0,0 +1,55 @@
++/**
++ * shared/lib/realtime.ts
++ *
++ * The only place that creates the WebSocket (Laravel Echo + Reverb) connection.
++ *
++ * Private channels need authorisation: before subscribing, Echo calls the
++ * authorizer below, which POSTs { socket_id, channel_name } to
++ * /api/v1/broadcasting/auth through `apiClient` — so the JWT is attached
++ * (and refreshed) exactly like any other API call. The backend answers 403
++ * if the user is not allowed on that channel.
++ */
++
++import Echo from 'laravel-echo'
++import Pusher from 'pusher-js'
++import { env } from '@/shared/config/env'
++import { apiClient } from '@/shared/lib/apiClient'
++
++;(window as unknown as { Pusher: typeof Pusher }).Pusher = Pusher
++
++let echo: Echo<'reverb'> | null = null
++
++export function getEcho(): Echo<'reverb'> {
++  echo ??= new Echo({
++    broadcaster: 'reverb',
++    key: env.reverb.key,
++    wsHost: env.reverb.host,
++    wsPort: env.reverb.port,
++    wssPort: env.reverb.port,
++    forceTLS: env.reverb.scheme === 'https',
++    enabledTransports: ['ws', 'wss'],
++    authorizer: (channel: { name: string }) => ({
++      authorize: (
++        socketId: string,
++        callback: (error: Error | null, authData: { auth: string } | null) => void,
++      ) => {
++        apiClient
++          .post<{ auth: string }>('/broadcasting/auth', {
++            socket_id: socketId,
++            channel_name: channel.name,
++          })
++          .then((data) => { callback(null, data) })
++          .catch((error: unknown) => {
++            callback(error instanceof Error ? error : new Error('Channel authorisation failed.'), null)
++          })
++      },
++    }),
++  })
++  return echo
++}
++
++/** Call on logout so the next user does not reuse the previous user's subscriptions. */
++export function disconnectRealtime(): void {
++  echo?.disconnect()
++  echo = null
++}

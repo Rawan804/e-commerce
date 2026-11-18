@@ -1,5 +1,6 @@
 import { FormControl, Grid, InputLabel, MenuItem, Select, type SelectChangeEvent } from '@mui/material'
-import { PRODUCT_CATEGORIES, type ProductFilters, type ProductSortKey } from '../types/product.types'
+import type { ProductFilters, ProductSortKey } from '../types/product.types'
+import { useBackendCategories } from '../hooks/useBackendCategories'
 
 interface ProductFiltersBarProps {
   filters: ProductFilters
@@ -7,21 +8,17 @@ interface ProductFiltersBarProps {
 }
 
 const SORT_OPTIONS: { value: ProductSortKey; label: string }[] = [
-  { value: 'featured', label: 'Featured' },
+  { value: 'featured', label: 'Newest first' },
   { value: 'price-asc', label: 'Price: low to high' },
   { value: 'price-desc', label: 'Price: high to low' },
-  { value: 'rating', label: 'Top rated' },
   { value: 'name', label: 'Name: A to Z' },
 ]
 
-/**
- * Category + sort controls laid out side-by-side on small screens and up.
- * Both reset page to 1 in the parent (handled there via the change handler) so
- * results don't end up on a now-empty page.
- */
 export default function ProductFiltersBar({ filters, onChange }: ProductFiltersBarProps) {
-  function handleCategory(e: SelectChangeEvent<ProductFilters['category']>) {
-    onChange({ ...filters, category: e.target.value as ProductFilters['category'] })
+  const { categories } = useBackendCategories()
+
+  function handleCategory(e: SelectChangeEvent<string>) {
+    onChange({ ...filters, category: e.target.value })
   }
 
   function handleSort(e: SelectChangeEvent<ProductSortKey>) {
@@ -31,7 +28,7 @@ export default function ProductFiltersBar({ filters, onChange }: ProductFiltersB
   return (
     <Grid container spacing={2}>
       <Grid size={{ xs: 12, sm: 6 }}>
-        <FormControl fullWidth variant="outlined">
+        <FormControl fullWidth variant="outlined" size="small">
           <InputLabel id="filter-category-label">Category</InputLabel>
           <Select
             labelId="filter-category-label"
@@ -41,7 +38,7 @@ export default function ProductFiltersBar({ filters, onChange }: ProductFiltersB
             onChange={handleCategory}
           >
             <MenuItem value="All">All categories</MenuItem>
-            {PRODUCT_CATEGORIES.map((c) => (
+            {categories.map((c) => (
               <MenuItem key={c} value={c}>
                 {c}
               </MenuItem>
@@ -50,7 +47,7 @@ export default function ProductFiltersBar({ filters, onChange }: ProductFiltersB
         </FormControl>
       </Grid>
       <Grid size={{ xs: 12, sm: 6 }}>
-        <FormControl fullWidth variant="outlined">
+        <FormControl fullWidth variant="outlined" size="small">
           <InputLabel id="filter-sort-label">Sort by</InputLabel>
           <Select
             labelId="filter-sort-label"

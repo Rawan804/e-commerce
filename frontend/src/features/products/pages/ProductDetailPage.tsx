@@ -9,7 +9,6 @@ import {
   Grid,
   IconButton,
   Link as MuiLink,
-  Rating,
   Skeleton,
   Stack,
   Typography,
@@ -25,7 +24,6 @@ import type { Product } from '../types/product.types'
 import { PATHS } from '@/shared/config/paths'
 import { formatCurrency } from '@/shared/lib/formatters'
 import { useCart } from '@/features/cart'
-import { useAuth } from '@/features/auth'
 import { useRole } from '@/shared/hooks/useRole'
 import ProductImage from '../components/ProductImage'
 import DeleteProductDialog from '../components/DeleteProductDialog'
@@ -34,7 +32,6 @@ import ErrorMessage from '@/shared/components/feedback/ErrorMessage'
 export default function ProductDetailPage() {
   const { id } = useParams<{ id: string }>()
   const { addItem, openCart } = useCart()
-  const { isAuthenticated } = useAuth()
   const { isAdmin } = useRole()
   const navigate = useNavigate()
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -86,7 +83,7 @@ export default function ProductDetailPage() {
     } catch (e) {
       setDeleteError(
         typeof e === 'object' && e !== null && 'message' in e
-          ? String((e as { message: unknown }).message)
+          ? String((e).message)
           : 'Failed to delete product.',
       )
       setConfirmDelete(false)
@@ -182,11 +179,9 @@ export default function ProductDetailPage() {
                   sx={{ bgcolor: 'action.hover', color: 'text.secondary' }}
                 />
                 <Chip
-                  label={
-                    product.availability ?? (outOfStock ? 'Out of stock' : 'In stock')
-                  }
+                  label={product.stock === null ? 'Stock unavailable' : product.availability ?? (outOfStock ? 'Out of stock' : 'In stock')}
                   size="small"
-                  color={outOfStock ? 'error' : 'success'}
+                  color={product.stock === null ? 'default' : outOfStock ? 'error' : 'success'}
                   variant="outlined"
                 />
               </Box>
@@ -195,51 +190,13 @@ export default function ProductDetailPage() {
                 {product.name}
               </Typography>
 
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <Rating
-                  value={product.rating}
-                  precision={0.5}
-                  readOnly
-                  aria-label={`Rated ${product.rating} out of 5`}
-                />
-                <Typography variant="body2" color="text.secondary">
-                  {product.rating.toFixed(1)} · {product.reviewCount} reviews
-                </Typography>
-              </Box>
-
-              <Box
-                sx={{
-                  display: 'flex',
-                  alignItems: 'baseline',
-                  gap: 1.5,
-                  flexWrap: 'wrap',
-                }}
+              <Typography
+                variant="h4"
+                component="span"
+                sx={{ fontWeight: 700, color: 'text.primary' }}
               >
-                <Typography
-                  variant="h4"
-                  component="span"
-                  sx={{ fontWeight: 700, color: 'text.primary' }}
-                >
-                  {formatCurrency(product.price)}
-                </Typography>
-                {product.compareAtPrice && product.compareAtPrice > product.price && (
-                  <Typography
-                    variant="h6"
-                    component="span"
-                    sx={{ textDecoration: 'line-through', color: 'text.disabled' }}
-                  >
-                    {formatCurrency(product.compareAtPrice)}
-                  </Typography>
-                )}
-                {product.compareAtPrice && product.compareAtPrice > product.price && (
-                  <Chip
-                    label={`Save ${formatCurrency(product.compareAtPrice - product.price)}`}
-                    size="small"
-                    color="secondary"
-                    sx={{ fontWeight: 700 }}
-                  />
-                )}
-              </Box>
+                {formatCurrency(product.price)}
+              </Typography>
 
               <Divider />
 
@@ -274,7 +231,7 @@ export default function ProductDetailPage() {
                   <IconButton
                     aria-label="Decrease quantity"
                     disabled={qty <= 1}
-                    onClick={() => setQty((q) => Math.max(1, q - 1))}
+                    onClick={() => { setQty((q) => Math.max(1, q - 1)); }}
                   >
                     <RemoveOutlined />
                   </IconButton>
@@ -286,8 +243,8 @@ export default function ProductDetailPage() {
                   </Typography>
                   <IconButton
                     aria-label="Increase quantity"
-                    disabled={outOfStock || qty >= product.stock}
-                    onClick={() => setQty((q) => Math.min(product.stock, q + 1))}
+                    disabled={outOfStock || (product.stock !== null && qty >= product.stock) || qty >= 100}
+                    onClick={() => { setQty((q) => Math.min(product.stock ?? 100, q + 1)); }}
                   >
                     <AddOutlined />
                   </IconButton>
@@ -327,7 +284,7 @@ export default function ProductDetailPage() {
                     color="error"
                     variant="text"
                     startIcon={<DeleteOutline />}
-                    onClick={() => setConfirmDelete(true)}
+                    onClick={() => { setConfirmDelete(true); }}
                     sx={{ alignSelf: 'flex-start' }}
                   >
                     Delete product
@@ -342,8 +299,10 @@ export default function ProductDetailPage() {
 
               <Typography variant="caption" color="text.secondary">
                 {outOfStock
-                  ? 'Currently unavailable. Tap “Notify me” soon — restock expected within 2–3 weeks.'
-                  : `${product.stock} in stock · Free shipping over $75 · 30-day returns`}
+                  ? 'Currently unavailable.'
+                  : product.stock === null
+                    ? 'Stock availability will be confirmed when you place the order.'
+                    : `${product.stock} in stock`}
               </Typography>
             </Stack>
           </Grid>
@@ -352,7 +311,7 @@ export default function ProductDetailPage() {
       <DeleteProductDialog
         product={confirmDelete ? product : null}
         loading={deleting}
-        onClose={() => setConfirmDelete(false)}
+        onClose={() => { setConfirmDelete(false); }}
         onConfirm={handleDelete}
       />
     </Container>

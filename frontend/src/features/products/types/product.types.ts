@@ -1,7 +1,6 @@
 // ─── Product domain types ────────────────────────────────────────────────────
-// Shapes used by the products feature. Field names align with what a typical
-// Laravel product resource returns; verify against the real API contract when
-// the backend is available and adjust here only.
+// Shapes used by the products feature. Field names align with what the
+// Laravel product resource returns.
 
 export interface Product {
   id: number
@@ -9,39 +8,29 @@ export interface Product {
   description: string
   /** Price in major currency units (e.g. dollars), not cents. */
   price: number
-  /** Compare-at price for showing a discount strike-through. Optional. */
-  compareAtPrice?: number
-  category: ProductCategory
-  /** Absolute image URL (Pexels CDN for demo data, or a backend URL). */
+  /** Category string — open-ended, comes from the backend. */
+  category: string
+  /** Absolute image URL returned by the backend, or empty string. */
   image: string
-  /** Short label shown under the price, e.g. "In stock" / "Low stock". */
+  /** Short availability label derived from stock_quantity. */
   availability?: string
-  rating: number
-  reviewCount: number
-  stock: number
-  featured: boolean
+  /** Current stock from the Warehouse service, or null when unavailable. */
+  stock: number | null
   createdAt: string
 }
 
-export type ProductCategory =
-  'Stationery' | 'Audio' | 'Wearables' | 'Photography' | 'Computing' | 'Home & Kitchen'
+/** Product categories are backend-provided strings; Laravel has no category endpoint. */
+export type ProductCategory = string
 
-export const PRODUCT_CATEGORIES: ProductCategory[] = [
-  'Stationery',
-  'Audio',
-  'Wearables',
-  'Photography',
-  'Computing',
-  'Home & Kitchen',
-]
+
 
 // ─── Filters & queries ───────────────────────────────────────────────────────
 
-export type ProductSortKey = 'featured' | 'price-asc' | 'price-desc' | 'rating' | 'name'
+export type ProductSortKey = 'featured' | 'price-asc' | 'price-desc' | 'name'
 
 export interface ProductFilters {
   search: string
-  category: ProductCategory | 'All'
+  category: string
   sort: ProductSortKey
 }
 
@@ -66,18 +55,15 @@ export interface ProductPageResult {
 }
 
 // ─── Mutations ────────────────────────────────────────────────────────────────
+// Only fields the Laravel backend accepts for create/update.
 
 export interface ProductInput {
   name: string
   description: string
   price: number
-  compareAtPrice?: number
-  category: ProductCategory
-  image: string
-  rating: number
-  reviewCount: number
-  stock: number
-  featured: boolean
+  category: string
+  initialStock: number | ''
+  image?: File | null
 }
 
 export type ProductInputErrors = Partial<Record<keyof ProductInput, string>>

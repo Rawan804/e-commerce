@@ -9,18 +9,21 @@ import {
 } from 'react'
 import type { Product } from '@/features/products/types/product.types'
 
+// ─── Types ────────────────────────────────────────────────────────────────────
 export interface CartItem {
   productId: number
   name: string
   price: number
   image: string
-  stock: number
+  stock: number | null
   qty: number
 }
 
 interface CartContextValue {
   items: CartItem[]
+  /** Total number of units in the cart. */
   count: number
+  /** Sum of price * qty across all items, in major currency units. */
   total: number
   isCartOpen: boolean
   addItem: (product: Product, qty?: number) => void
@@ -60,11 +63,15 @@ export function CartProvider({ children }: CartProviderProps) {
   }, [items])
 
   const addItem = useCallback((product: Product, qty = 1) => {
+    if (product.stock === 0) return
+    const requestedQty = Math.max(1, Math.min(100, Math.trunc(qty)))
     setItems((prev) => {
       const existing = prev.find((i) => i.productId === product.id)
       if (existing) {
         // Never exceed available stock.
-        const nextQty = Math.min(existing.qty + qty, product.stock || existing.qty + qty)
+        const nextQty = product.stock === null
+          ? Math.min(existing.qty + requestedQty, 100)
+          : Math.min(existing.qty + requestedQty, product.stock, 100)
         return prev.map((i) =>
           i.productId === product.id ? { ...i, qty: nextQty } : i,
         )
@@ -77,7 +84,7 @@ export function CartProvider({ children }: CartProviderProps) {
           price: product.price,
           image: product.image,
           stock: product.stock,
-          qty: Math.min(qty, product.stock || qty),
+          qty: product.stock === null ? requestedQty : Math.min(requestedQty, product.stock),
         },
       ]
     })
@@ -89,7 +96,7 @@ export function CartProvider({ children }: CartProviderProps) {
       prev
         .map((i) =>
           i.productId === productId
-            ? { ...i, qty: Math.max(0, Math.min(qty, i.stock || qty)) }
+            ? { ...i, qty: Math.max(0, i.stock === null ? Math.min(qty, 100) : Math.min(qty, i.stock, 100)) }
             : i,
         )
         .filter((i) => i.qty > 0),
@@ -100,9 +107,9 @@ export function CartProvider({ children }: CartProviderProps) {
     setItems((prev) => prev.filter((i) => i.productId !== productId))
   }, [])
 
-  const clearCart = useCallback(() => setItems([]), [])
-  const openCart = useCallback(() => setCartOpen(true), [])
-  const closeCart = useCallback(() => setCartOpen(false), [])
+  const clearCart = useCallback(() => { setItems([]); }, [])
+  const openCart = useCallback(() => { setCartOpen(true); }, [])
+  const closeCart = useCallback(() => { setCartOpen(false); }, [])
 
   const { count, total } = useMemo(() => {
     return items.reduce(
