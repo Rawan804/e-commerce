@@ -10,11 +10,14 @@ interface PasswordFieldProps {
   onChange: (e: ChangeEvent<HTMLInputElement>) => void
   error?: string | undefined
   autoComplete?: string
-
+  /** Mark as required for the label asterisk. */
   required?: boolean
 }
 
-
+/**
+ * Password input with a show/hide visibility toggle. Reused by the login and
+ * registration forms for a consistent, accessible experience.
+ */
 export default function PasswordField({
   name,
   label,

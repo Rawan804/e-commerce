@@ -47,7 +47,7 @@ const PER_PAGE = 8
 
 function errMessage(e: unknown, fallback: string): string {
   return typeof e === 'object' && e !== null && 'message' in e
-    ? String((e as { message: unknown }).message)
+    ? String((e).message)
     : fallback
 }
 
@@ -69,7 +69,7 @@ function RoleDialog({ user, pendingRole, loading, onClose, onConfirm }: RoleDial
           Set <strong>{user?.name}</strong> ({user?.email}) to{' '}
           <strong style={{ textTransform: 'capitalize' }}>{pendingRole}</strong>?
           {pendingRole === 'admin' && (
-            <Box component="span" display="block" sx={{ mt: 1, color: 'warning.main', fontWeight: 600 }}>
+            <Box component="span" sx={{ display: 'block', mt: 1, color: 'warning.main', fontWeight: 600 }}>
               This will grant full admin access to the storefront.
             </Box>
           )}
@@ -175,7 +175,7 @@ export default function AdminUsersPage() {
 
   return (
     <Container maxWidth="lg" sx={{ py: { xs: 4, md: 6 } }}>
-      <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 0.5 }}>
+      <Stack direction="row" spacing={1.5} sx={{ mb: 0.5, alignItems: 'center' }}>
         <PeopleOutline color="primary" fontSize="large" aria-hidden />
         <Typography variant="h3" component="h1" sx={{ fontWeight: 700 }}>
           Users
@@ -190,7 +190,7 @@ export default function AdminUsersPage() {
       </Box>
 
       {error ? (
-        <ErrorMessage error={error} onRetry={() => setReloadKey((k) => k + 1)} />
+        <ErrorMessage error={error} onRetry={() => { setReloadKey((k) => k + 1); }} />
       ) : loading && items.length === 0 ? (
         <Stack spacing={1}>
           {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} variant="rounded" height={56} />)}
@@ -215,8 +215,8 @@ export default function AdminUsersPage() {
                   return (
                     <TableRow key={u.id} hover>
                       <TableCell>
-                        <Stack direction="row" spacing={2} alignItems="center">
-                          <Avatar src={u.avatar} alt={u.name}>
+                        <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
+                          <Avatar alt={u.name}>
                             {u.name.charAt(0).toUpperCase()}
                           </Avatar>
                           <Box sx={{ minWidth: 0 }}>
@@ -248,7 +248,7 @@ export default function AdminUsersPage() {
                               labelId={`role-label-${u.id}`}
                               label="Role"
                               value={u.role}
-                              onChange={(e) => openRoleDialog(u, e.target.value as 'admin' | 'customer')}
+                              onChange={(e) => { openRoleDialog(u, e.target.value); }}
                               sx={{ textTransform: 'capitalize' }}
                             >
                               <MenuItem value="customer">Customer</MenuItem>
@@ -269,7 +269,7 @@ export default function AdminUsersPage() {
                               aria-label={`Delete ${u.name}`}
                               color="error"
                               disabled={isMe}
-                              onClick={() => setDeleting(u)}
+                              onClick={() => { setDeleting(u); }}
                             >
                               <DeleteOutline />
                             </IconButton>
@@ -288,7 +288,7 @@ export default function AdminUsersPage() {
               <Pagination
                 page={page}
                 count={result.totalPages}
-                onChange={(_, p) => setPage(p)}
+                onChange={(_, p) => { setPage(p); }}
                 color="primary"
                 shape="rounded"
               />
@@ -300,7 +300,7 @@ export default function AdminUsersPage() {
       <DeleteUserDialog
         user={deleting}
         loading={deleteLoading}
-        onClose={() => setDeleting(null)}
+        onClose={() => { setDeleting(null); }}
         onConfirm={handleDelete}
       />
 
@@ -315,11 +315,11 @@ export default function AdminUsersPage() {
       <Snackbar
         open={Boolean(toast)}
         autoHideDuration={3500}
-        onClose={() => setToast(null)}
+        onClose={() => { setToast(null); }}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >
         {toast ? (
-          <Alert severity={toast.severity} variant="filled" onClose={() => setToast(null)} sx={{ width: '100%' }}>
+          <Alert severity={toast.severity} variant="filled" onClose={() => { setToast(null); }} sx={{ width: '100%' }}>
             {toast.msg}
           </Alert>
         ) : undefined}

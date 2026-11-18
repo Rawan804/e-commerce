@@ -23,8 +23,9 @@ import AttachMoneyOutlined from '@mui/icons-material/AttachMoneyOutlined'
 import WarningAmberOutlined from '@mui/icons-material/WarningAmberOutlined'
 import { Link } from 'react-router-dom'
 import { productsService } from '@/features/products/services/productsService'
+import type { Product } from '@/features/products/types/product.types'
 import { usersService } from '@/features/users/services/usersService'
-import { ordersService, type Order } from '@/features/orders'
+import { isOrderServerError, NEXT_ORDER_STATUSES, orderErrorMessage, ordersService, type Order } from '@/features/orders'
 import { formatCurrency, formatDate } from '@/shared/lib/formatters'
 import { PATHS } from '@/shared/config/paths'
 import StatCard from '../components/StatCard'
@@ -36,34 +37,52 @@ export default function AdminDashboardPage() {
   const [recentOrders, setRecentOrders] = useState<Order[]>([])
   const [lowStock, setLowStock] = useState<{ id: number; name: string; stock: number }[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [statusTarget, setStatusTarget] = useState<Order | null>(null)
   const [statusLoading, setStatusLoading] = useState(false)
   const [toast, setToast] = useState<{ msg: string; severity: 'success' | 'error' } | null>(null)
 
   async function load() {
     setLoading(true)
+    setError(null)
     try {
-      const [productRes, userRes, orderRes] = await Promise.all([
-        productsService.list({ page: 1, perPage: 1000, filters: { search: '', category: 'All', sort: 'featured' } }),
-        usersService.list({ page: 1, perPage: 1000, search: '' }),
-        ordersService.list({ page: 1, perPage: 1000 }),
+      const [productFirstPage, userRes, orderFirstPage] = await Promise.all([
+        productsService.list({ page: 1, perPage: 100, filters: { search: '', category: 'All', sort: 'featured' } }),
+        usersService.list({ page: 1, perPage: 100, search: '' }),
+        ordersService.list({ page: 1, perPage: 100 }),
       ])
-      const revenue = orderRes.items
+      const [productOtherPages, orderOtherPages] = await Promise.all([
+        Promise.all(Array.from({ length: productFirstPage.totalPages - 1 }, (_, index) =>
+          productsService.list({ page: index + 2, perPage: 100, filters: { search: '', category: 'All', sort: 'featured' } }),
+        )),
+        Promise.all(Array.from({ length: orderFirstPage.totalPages - 1 }, (_, index) =>
+          ordersService.list({ page: index + 2, perPage: 100 }),
+        )),
+      ])
+      const allProducts = [productFirstPage, ...productOtherPages].flatMap((page) => page.items)
+      const allOrders = [orderFirstPage, ...orderOtherPages].flatMap((page) => page.items)
+      const revenue = allOrders
         .filter((o) => o.status !== 'cancelled')
         .reduce((sum, o) => sum + o.total, 0)
 
       setStats({
-        products: productRes.total,
+        products: productFirstPage.total,
         users: userRes.total,
-        orders: orderRes.total,
+        orders: orderFirstPage.total,
         revenue,
       })
-      setRecentOrders(orderRes.items.slice(0, 5))
+      setRecentOrders(allOrders.slice(0, 5))
       setLowStock(
-        productRes.items
-          .filter((p) => p.stock <= 10)
+        allProducts
+          .filter((p): p is Product & { stock: number } => p.stock !== null && p.stock <= 10)
           .map((p) => ({ id: p.id, name: p.name, stock: p.stock }))
           .slice(0, 5),
+      )
+    } catch (e) {
+      setError(
+        typeof e === 'object' && e !== null && 'message' in e
+          ? String((e).message)
+          : 'Failed to load dashboard data.',
       )
     } finally {
       setLoading(false)
@@ -76,10 +95,20 @@ export default function AdminDashboardPage() {
     setStatusLoading(true)
     try {
       const updated = await ordersService.updateStatus(orderId, status)
-      setRecentOrders((prev) => prev.map((o) => (o.id === updated.id ? updated : o)))
+      setRecentOrders((prev) => prev.map((order) =>
+        order.id === updated.id ? { ...updated, userName: order.userName } : order,
+      ))
       setToast({ msg: `Order ${orderId} updated to "${status}".`, severity: 'success' })
-    } catch {
-      setToast({ msg: 'Failed to update order status.', severity: 'error' })
+    } catch (error) {
+      setToast({
+        msg: orderErrorMessage(
+          error,
+          'Failed to update order status.',
+          'The server returned an error after the status update. The order may have changed; the dashboard is being refreshed.',
+        ),
+        severity: 'error',
+      })
+      if (isOrderServerError(error)) await load()
     } finally {
       setStatusLoading(false)
       setStatusTarget(null)
@@ -95,30 +124,32 @@ export default function AdminDashboardPage() {
         Welcome back. Here's what's happening in your store.
       </Typography>
 
+      {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
+
       {/* Stats */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
         {loading
           ? Array.from({ length: 4 }).map((_, i) => (
-              <Grid key={i} size={{ xs: 12, sm: 6, lg: 3 }}>
-                <Skeleton variant="rectangular" height={100} sx={{ borderRadius: 2 }} />
-              </Grid>
-            ))
+            <Grid key={i} size={{ xs: 12, sm: 6, lg: 3 }}>
+              <Skeleton variant="rectangular" height={100} sx={{ borderRadius: 2 }} />
+            </Grid>
+          ))
           : [
-              { label: 'Total products', value: stats.products, icon: StorefrontOutlined, color: '#C4A7D7' },
-              { label: 'Total users', value: stats.users, icon: PeopleOutlineOutlined, color: '#7BA7BC' },
-              { label: 'Total orders', value: stats.orders, icon: ReceiptLongOutlined, color: '#B5C99A' },
-              { label: 'Revenue (non-cancelled)', value: formatCurrency(stats.revenue), icon: AttachMoneyOutlined, color: '#D4A574' },
-            ].map((s) => (
-              <Grid key={s.label} size={{ xs: 12, sm: 6, lg: 3 }}>
-                <StatCard label={s.label} value={s.value} icon={s.icon} color={s.color} />
-              </Grid>
-            ))}
+            { label: 'Total products', value: stats.products, icon: StorefrontOutlined, color: '#C4A7D7' },
+            { label: 'Total users', value: stats.users, icon: PeopleOutlineOutlined, color: '#7BA7BC' },
+            { label: 'Total orders', value: stats.orders, icon: ReceiptLongOutlined, color: '#B5C99A' },
+            { label: 'Revenue (non-cancelled)', value: formatCurrency(stats.revenue), icon: AttachMoneyOutlined, color: '#D4A574' },
+          ].map((s) => (
+            <Grid key={s.label} size={{ xs: 12, sm: 6, lg: 3 }}>
+              <StatCard label={s.label} value={s.value} icon={s.icon} color={s.color} />
+            </Grid>
+          ))}
       </Grid>
 
       <Grid container spacing={3}>
         {/* Recent orders */}
         <Grid size={{ xs: 12, lg: 8 }}>
-          <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
+          <Stack direction="row" sx={{ mb: 1.5, justifyContent: 'space-between', alignItems: 'center' }}>
             <Typography variant="h6" sx={{ fontWeight: 700 }}>
               Recent orders
             </Typography>
@@ -147,7 +178,7 @@ export default function AdminDashboardPage() {
                       <TableCell sx={{ fontFamily: 'monospace', fontWeight: 600 }}>
                         {order.id}
                       </TableCell>
-                      <TableCell>{order.address.fullName}</TableCell>
+                      <TableCell>{order.userName ?? `User #${order.userId}`}</TableCell>
                       <TableCell>{formatCurrency(order.total)}</TableCell>
                       <TableCell>
                         <OrderStatusChip status={order.status} />
@@ -156,9 +187,11 @@ export default function AdminDashboardPage() {
                         {formatDate(order.createdAt)}
                       </TableCell>
                       <TableCell>
-                        <Button size="small" onClick={() => setStatusTarget(order)}>
-                          Update
-                        </Button>
+                        {NEXT_ORDER_STATUSES[order.status].length > 0 && (
+                          <Button size="small" onClick={() => { setStatusTarget(order); }}>
+                            Update
+                          </Button>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -170,7 +203,7 @@ export default function AdminDashboardPage() {
 
         {/* Low stock */}
         <Grid size={{ xs: 12, lg: 4 }}>
-          <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1.5 }}>
+          <Stack direction="row" sx={{ mb: 1.5, justifyContent: 'space-between', alignItems: 'center' }}>
             <Typography variant="h6" sx={{ fontWeight: 700 }}>
               Low stock alerts
             </Typography>
@@ -225,18 +258,18 @@ export default function AdminDashboardPage() {
       <OrderStatusDialog
         order={statusTarget}
         loading={statusLoading}
-        onClose={() => setStatusTarget(null)}
+        onClose={() => { setStatusTarget(null); }}
         onConfirm={handleStatusChange}
       />
 
       <Snackbar
         open={Boolean(toast)}
         autoHideDuration={3500}
-        onClose={() => setToast(null)}
+        onClose={() => { setToast(null); }}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >
         {toast ? (
-          <Alert severity={toast.severity} variant="filled" onClose={() => setToast(null)}>
+          <Alert severity={toast.severity} variant="filled" onClose={() => { setToast(null); }}>
             {toast.msg}
           </Alert>
         ) : undefined}

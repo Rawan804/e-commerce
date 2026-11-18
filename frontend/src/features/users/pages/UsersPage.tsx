@@ -36,7 +36,7 @@ const PER_PAGE = 8
 
 function errMessage(e: unknown, fallback: string): string {
   if (typeof e === 'object' && e !== null && 'message' in e) {
-    return String((e as { message: unknown }).message)
+    return String((e).message)
   }
   return fallback
 }
@@ -122,7 +122,7 @@ export default function UsersPage() {
       </Box>
 
       {error ? (
-        <ErrorMessage error={error} onRetry={() => setReloadKey((k) => k + 1)} />
+        <ErrorMessage error={error} onRetry={() => { setReloadKey((k) => k + 1); }} />
       ) : loading && items.length === 0 ? (
         <Stack spacing={1}>
           {Array.from({ length: 6 }).map((_, i) => (
@@ -153,7 +153,7 @@ export default function UsersPage() {
                     <TableRow key={u.id} hover>
                       <TableCell>
                         <Stack direction="row" spacing={2} sx={{ alignItems: 'center' }}>
-                          <Avatar src={u.avatar} alt={u.name}>
+                          <Avatar alt={u.name}>
                             {u.name.charAt(0).toUpperCase()}
                           </Avatar>
                           <Box sx={{ minWidth: 0 }}>
@@ -185,7 +185,7 @@ export default function UsersPage() {
                               aria-label={`Delete ${u.name}`}
                               color="error"
                               disabled={isMe}
-                              onClick={() => setDeleting(u)}
+                              onClick={() => { setDeleting(u); }}
                             >
                               <DeleteOutline />
                             </IconButton>
@@ -204,7 +204,7 @@ export default function UsersPage() {
               <Pagination
                 page={page}
                 count={result.totalPages}
-                onChange={(_, p) => setPage(p)}
+                onChange={(_, p) => { setPage(p); }}
                 color="primary"
                 shape="rounded"
               />
@@ -216,18 +216,18 @@ export default function UsersPage() {
       <DeleteUserDialog
         user={deleting}
         loading={deleteLoading}
-        onClose={() => setDeleting(null)}
+        onClose={() => { setDeleting(null); }}
         onConfirm={confirmDelete}
       />
 
       <Snackbar
         open={Boolean(toast)}
         autoHideDuration={3500}
-        onClose={() => setToast(null)}
+        onClose={() => { setToast(null); }}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >
         {toast ? (
-          <Alert severity={toast.severity} variant="filled" onClose={() => setToast(null)} sx={{ width: '100%' }}>
+          <Alert severity={toast.severity} variant="filled" onClose={() => { setToast(null); }} sx={{ width: '100%' }}>
             {toast.msg}
           </Alert>
         ) : undefined}

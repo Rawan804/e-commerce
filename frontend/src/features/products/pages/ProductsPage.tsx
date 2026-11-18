@@ -11,7 +11,6 @@ import {
   Typography,
 } from '@mui/material'
 import AddOutlined from '@mui/icons-material/AddOutlined'
-import { useAuth } from '@/features/auth'
 import { useRole } from '@/shared/hooks/useRole'
 import { productsService } from '../services/productsService'
 import {
@@ -35,7 +34,6 @@ import DeleteProductDialog from '../components/DeleteProductDialog'
 const PER_PAGE = 8
 
 export default function ProductsPage() {
-  const { isAuthenticated } = useAuth()
   const { isAdmin } = useRole()
   const [searchInput, setSearchInput] = useState('')
   const debouncedSearch = useDebounce(searchInput, 350)
@@ -63,8 +61,7 @@ export default function ProductsPage() {
     severity: 'success' | 'error'
   } | null>(null)
   const showToast = useCallback(
-    (msg: string, severity: 'success' | 'error' = 'success') =>
-      setToast({ msg, severity }),
+    (msg: string, severity: 'success' | 'error' = 'success') => { setToast({ msg, severity }); },
     [],
   )
 
@@ -114,14 +111,14 @@ export default function ProductsPage() {
     setFormOpen(true)
   }
 
-  async function handleSubmit(input: ProductInput) {
+  async function handleSubmit(input: ProductInput, image: File | null) {
     setSaving(true)
     try {
       if (formMode === 'edit' && editing) {
-        await productsService.update(editing.id, input)
+        await productsService.update(editing.id, { ...input, image })
         showToast(`"${input.name}" updated.`)
       } else {
-        await productsService.create(input)
+        await productsService.create({ ...input, image })
         showToast(`"${input.name}" added.`)
       }
       setFormOpen(false)
@@ -222,7 +219,7 @@ export default function ProductsPage() {
 
       {/* States */}
       {error ? (
-        <ErrorMessage error={error} onRetry={() => setFilters((f) => ({ ...f }))} />
+        <ErrorMessage error={error} onRetry={() => { setFilters((f) => ({ ...f })); }} />
       ) : showSkeletons ? (
         <Grid container spacing={3}>
           {Array.from({ length: PER_PAGE }).map((_, i) => (
@@ -291,7 +288,7 @@ export default function ProductsPage() {
         mode={formMode}
         initial={editing}
         loading={saving}
-        onClose={() => setFormOpen(false)}
+        onClose={() => { setFormOpen(false); }}
         onSubmit={handleSubmit}
       />
 
@@ -299,7 +296,7 @@ export default function ProductsPage() {
       <DeleteProductDialog
         product={deleting}
         loading={deleteLoading}
-        onClose={() => setDeleting(null)}
+        onClose={() => { setDeleting(null); }}
         onConfirm={handleConfirmDelete}
       />
 
@@ -307,14 +304,14 @@ export default function ProductsPage() {
       <Snackbar
         open={Boolean(toast)}
         autoHideDuration={3500}
-        onClose={() => setToast(null)}
+        onClose={() => { setToast(null); }}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
       >
         {toast ? (
           <Alert
             severity={toast.severity}
             variant="filled"
-            onClose={() => setToast(null)}
+            onClose={() => { setToast(null); }}
             sx={{ width: '100%' }}
           >
             {toast.msg}

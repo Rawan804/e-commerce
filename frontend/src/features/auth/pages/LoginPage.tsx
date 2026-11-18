@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent, type FormEvent } from 'react'
+import { useState, type ChangeEvent, type SyntheticEvent } from 'react'
 import {
   Alert,
   Box,
@@ -58,7 +58,7 @@ export default function LoginPage() {
     setFormError(null)
   }
 
-  async function handleSubmit(e: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(e: SyntheticEvent<HTMLFormElement>) {
     e.preventDefault()
     const nextErrors = validate(values)
     setErrors(nextErrors)
@@ -73,14 +73,24 @@ export default function LoginPage() {
       })
       login(user, token)
       // Role-aware redirect: admin → /admin, customer → /account
-      // If the user was redirected here from a specific page, honour that instead.
-      const defaultDest = user.role === 'admin' ? PATHS.admin : PATHS.account
-      navigate(from !== PATHS.home ? from : defaultDest, { replace: true })
+      const requestedAdminPage = from === PATHS.admin || from.startsWith(`${PATHS.admin}/`)
+      const destination = user.role === 'admin'
+        ? (requestedAdminPage ? from : PATHS.admin)
+        : (requestedAdminPage || from === PATHS.home ? PATHS.account : from)
+      await navigate(destination, { replace: true })
     } catch (err) {
-      const message =
-        err && typeof err === 'object' && 'message' in err
-          ? String((err as { message: string }).message)
-          : 'Unable to sign in. Please try again.'
+      if (err && typeof err === 'object' && 'errors' in err) {
+        // Laravel 422 field-level validation errors
+        const apiErrors = (err as { errors: Record<string, string[]> }).errors
+        const nextErrors: FormErrors = {}
+        if (apiErrors.email?.[0]) nextErrors.email = apiErrors.email[0]
+        if (apiErrors.password?.[0]) nextErrors.password = apiErrors.password[0]
+        setErrors(nextErrors)
+      }
+      const message = err && typeof err === 'object' && 'message' in err
+        && typeof err.message === 'string'
+        ? err.message
+        : 'Unable to sign in. Please try again.'
       setFormError(message)
     } finally {
       setLoading(false)

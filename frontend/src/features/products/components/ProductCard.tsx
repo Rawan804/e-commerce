@@ -5,7 +5,6 @@ import {
   CardActionArea,
   Chip,
   IconButton,
-  Rating,
   Tooltip,
   Typography,
 } from '@mui/material'
@@ -13,30 +12,32 @@ import EditOutlined from '@mui/icons-material/EditOutlined'
 import DeleteOutline from '@mui/icons-material/DeleteOutlineOutlined'
 import AddShoppingCartOutlined from '@mui/icons-material/AddShoppingCartOutlined'
 import { Link } from 'react-router-dom'
-import type { Product } from '../types/product.types'
 import { PATHS, buildPath } from '@/shared/config/paths'
 import { formatCurrency } from '@/shared/lib/formatters'
 import { useCart } from '@/features/cart'
 import ProductImage from './ProductImage'
+import type { Product } from '@/features/products/types/product.types'
+
 
 interface ProductCardProps {
   product: Product
-  /** When provided, an Edit button is shown. Omit on storefront pages. */
   onEdit?: (product: Product) => void
-  /** When provided, a Delete button is shown. Omit on storefront pages. */
   onDelete?: (product: Product) => void
 }
 
-/** Compact stock/availability badge colour helper. */
-function availabilityColor(product: Product) {
+function availabilityColor(product: Product): 'default' | 'success' | 'warning' | 'error' {
   if (product.stock === 0) return 'error'
-  if (product.stock <= 10) return 'warning'
+  if (product.stock !== null && product.stock <= 10) return 'warning'
+  if (product.stock === null) return 'default'
   return 'success'
 }
 
 export default function ProductCard({ product, onEdit, onDelete }: ProductCardProps) {
   const { addItem } = useCart()
   const outOfStock = product.stock === 0
+  const availability = product.stock === null
+    ? 'Stock unavailable'
+    : product.availability ?? (outOfStock ? 'Out of stock' : 'In stock')
   const detailPath = buildPath(PATHS.productDetail, { id: String(product.id) })
 
   return (
@@ -50,12 +51,9 @@ export default function ProductCard({ product, onEdit, onDelete }: ProductCardPr
           transform: 'translateY(-2px)',
           boxShadow: '0 4px 16px rgba(28,25,23,0.06)',
         },
-        '&:focus-within': {
-          boxShadow: '0 4px 16px rgba(28,25,23,0.06)',
-        },
       }}
     >
-      {/* Image + hover quick actions */}
+      {/* Image */}
       <Box sx={{ position: 'relative' }}>
         <CardActionArea
           component={Link}
@@ -92,16 +90,11 @@ export default function ProductCard({ product, onEdit, onDelete }: ProductCardPr
               bgcolor: 'rgba(245,245,244,0.75)',
             }}
           >
-            <Chip
-              label="Out of stock"
-              color="error"
-              size="small"
-              sx={{ fontWeight: 700 }}
-            />
+            <Chip label="Out of stock" color="error" size="small" sx={{ fontWeight: 700 }} />
           </Box>
         )}
 
-        {/* Management actions (admin/storefront management only) */}
+        {/* Admin actions */}
         {(onEdit || onDelete) && (
           <Box
             sx={{
@@ -110,7 +103,6 @@ export default function ProductCard({ product, onEdit, onDelete }: ProductCardPr
               right: 8,
               display: 'flex',
               gap: 0.5,
-              // Reveal on hover for desktop, always visible on touch
               opacity: { xs: 1, sm: 0 },
               transition: 'opacity 0.2s ease',
               '.MuiCard-root:hover &': { opacity: 1 },
@@ -121,15 +113,8 @@ export default function ProductCard({ product, onEdit, onDelete }: ProductCardPr
                 <IconButton
                   size="small"
                   aria-label={`Edit ${product.name}`}
-                  onClick={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    onEdit(product)
-                  }}
-                  sx={{
-                    bgcolor: 'background.paper',
-                    '&:hover': { bgcolor: 'action.hover' },
-                  }}
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); onEdit(product) }}
+                  sx={{ bgcolor: 'background.paper', '&:hover': { bgcolor: 'action.hover' } }}
                 >
                   <EditOutlined fontSize="small" />
                 </IconButton>
@@ -140,16 +125,8 @@ export default function ProductCard({ product, onEdit, onDelete }: ProductCardPr
                 <IconButton
                   size="small"
                   aria-label={`Delete ${product.name}`}
-                  onClick={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    onDelete(product)
-                  }}
-                  sx={{
-                    bgcolor: 'background.paper',
-                    color: 'error.main',
-                    '&:hover': { bgcolor: 'action.hover' },
-                  }}
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(product) }}
+                  sx={{ bgcolor: 'background.paper', color: 'error.main', '&:hover': { bgcolor: 'action.hover' } }}
                 >
                   <DeleteOutline fontSize="small" />
                 </IconButton>
@@ -161,26 +138,6 @@ export default function ProductCard({ product, onEdit, onDelete }: ProductCardPr
 
       {/* Body */}
       <Box sx={{ p: 2, display: 'flex', flexDirection: 'column', gap: 1, flex: 1 }}>
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 0.5,
-            color: 'text.secondary',
-          }}
-        >
-          <Rating
-            value={product.rating}
-            precision={0.5}
-            readOnly
-            size="small"
-            aria-label={`Rated ${product.rating} out of 5`}
-          />
-          <Typography variant="caption" color="text.secondary">
-            {product.rating.toFixed(1)} ({product.reviewCount})
-          </Typography>
-        </Box>
-
         <Typography
           component={Link}
           to={detailPath}
@@ -196,47 +153,20 @@ export default function ProductCard({ product, onEdit, onDelete }: ProductCardPr
             lineHeight: 1.3,
             minHeight: '2.6em',
             '&:hover': { color: 'primary.dark' },
-            '&:focus-visible': {
-              outline: '2px solid',
-              outlineColor: 'primary.main',
-              borderRadius: 1,
-            },
           }}
         >
           {product.name}
         </Typography>
 
         <Box sx={{ mt: 'auto' }}>
-          <Box sx={{ display: 'flex', alignItems: 'baseline', gap: 1, flexWrap: 'wrap' }}>
-            <Typography
-              variant="h6"
-              component="span"
-              sx={{ fontWeight: 700, color: 'text.primary' }}
-            >
-              {formatCurrency(product.price)}
-            </Typography>
-            {product.compareAtPrice && product.compareAtPrice > product.price && (
-              <Typography
-                variant="body2"
-                component="span"
-                sx={{ textDecoration: 'line-through', color: 'text.disabled' }}
-              >
-                {formatCurrency(product.compareAtPrice)}
-              </Typography>
-            )}
-          </Box>
+          <Typography variant="h6" component="span" sx={{ fontWeight: 700 }}>
+            {formatCurrency(product.price)}
+          </Typography>
 
-          <Box
-            sx={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              mt: 1,
-            }}
-          >
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 0.5 }}>
             <Chip
-              label={product.availability ?? (outOfStock ? 'Out of stock' : 'In stock')}
-              color={availabilityColor(product) as 'success' | 'warning' | 'error'}
+              label={availability}
+              color={availabilityColor(product)}
               size="small"
               variant="outlined"
               sx={{ fontWeight: 600 }}
@@ -249,7 +179,7 @@ export default function ProductCard({ product, onEdit, onDelete }: ProductCardPr
             size="medium"
             startIcon={<AddShoppingCartOutlined />}
             disabled={outOfStock}
-            onClick={() => addItem(product, 1)}
+            onClick={() => { addItem(product, 1); }}
             sx={{ mt: 1.5 }}
             aria-label={`Add ${product.name} to cart`}
           >

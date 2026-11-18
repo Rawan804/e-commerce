@@ -1,16 +1,21 @@
 import { createTheme } from '@mui/material/styles'
 import type { ThemeOptions } from '@mui/material/styles'
 
+// ─── Design tokens ────────────────────────────────────────────────────────────
+// All colours, radii, spacing, and font decisions live here.
+// Never hard-code a colour or font-size string in a component.
 
 const themeOptions: ThemeOptions = {
-  
+  // ── Spacing ─────────────────────────────────────────────────────────────────
+  // 8 px base; theme.spacing(2) === '16px'
   spacing: 8,
 
-
+  // ── Shape ───────────────────────────────────────────────────────────────────
   shape: {
     borderRadius: 8,
   },
 
+  // ── Palette ─────────────────────────────────────────────────────────────────
 
 palette: {
   primary: {
@@ -52,7 +57,7 @@ palette: {
 },
 
 
-  
+  // ── Typography ───────────────────────────────────────────────────────────────
   typography: {
     fontFamily: '"Source Sans 3", sans-serif',
     fontWeightRegular: 400,
@@ -108,7 +113,11 @@ palette: {
     },
   },
 
+  // ── Breakpoints ──────────────────────────────────────────────────────────────
+  // Using MUI defaults: xs(0) sm(600) md(900) lg(1200) xl(1536)
+  // Justification: standard and well-documented; no custom viewport needs yet.
 
+  // ── Component overrides / defaults ───────────────────────────────────────────
   components: {
     MuiButton: {
       styleOverrides: {

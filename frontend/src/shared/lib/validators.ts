@@ -1,8 +1,13 @@
-
+/**
+ * shared/lib/validators.ts
+ *
+ * Pure, framework-agnostic validation helpers.
+ * Used in Phase 5 form validation. Returns a string error message or null.
+ */
 
 export type ValidationResult = string | null
 
-
+// ─── Primitives ───────────────────────────────────────────────────────────────
 
 export function required(value: unknown, label = 'This field'): ValidationResult {
   if (value === null || value === undefined) return `${label} is required.`
@@ -28,7 +33,7 @@ export function maxLength(
   return null
 }
 
-
+// ─── Email ────────────────────────────────────────────────────────────────────
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -37,7 +42,7 @@ export function email(value: string): ValidationResult {
   return null
 }
 
-
+// ─── Password ─────────────────────────────────────────────────────────────────
 
 export function password(value: string): ValidationResult {
   if (value.length < 8) return 'Password must be at least 8 characters.'
@@ -52,13 +57,15 @@ export function passwordConfirmation(
   return null
 }
 
-
+// ─── Numbers ─────────────────────────────────────────────────────────────────
 
 export function positiveNumber(value: number, label = 'This field'): ValidationResult {
   if (isNaN(value) || value <= 0) return `${label} must be a positive number.`
   return null
 }
 
+// ─── Compose ─────────────────────────────────────────────────────────────────
+// Run multiple validators and return the first error encountered.
 
 export function compose(
   ...validators: (() => ValidationResult)[]

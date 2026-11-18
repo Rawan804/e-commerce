@@ -8,6 +8,11 @@ const FOOTER_LINKS = [
 ]
 
 const YEAR = new Date().getFullYear()
+
+/**
+ * Site-wide footer with nav links and copyright.
+ * Uses semantic <footer> element via MUI Box component prop.
+ */
 export default function Footer() {
   return (
     <Box
@@ -31,8 +36,7 @@ export default function Footer() {
               ShopFront
             </Typography>
             <Typography variant="body2" sx={{ opacity: 0.75, maxWidth: 260 }}>
-              Quality products delivered to your door. Fast shipping, easy returns, and
-              24/7 support.
+              Browse current products, check stock availability, and track your orders.
             </Typography>
           </Grid>
 

@@ -1,3 +1,7 @@
+// ─── Route path constants ─────────────────────────────────────────────────────
+// Single source of truth for every URL in the app.
+// The router, nav items, Link components, and redirects all import from here.
+// Never hard-code a path string anywhere else.
 
 export const PATHS = {
   home: '/',
@@ -28,7 +32,8 @@ export const PATHS = {
   checkout: '/checkout',
 } as const
 
-
+// Helper: builds a concrete URL from a parameterised path.
+// Usage: buildPath(PATHS.productDetail, { id: '42' }) → '/products/42'
 export function buildPath(
   pattern: string,
   params: Record<string, string>,

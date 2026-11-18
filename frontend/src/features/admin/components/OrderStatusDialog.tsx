@@ -10,8 +10,8 @@ import {
   Select,
   Typography,
 } from '@mui/material'
-import { useState } from 'react'
-import { ORDER_STATUSES, type Order, type OrderStatus } from '@/features/orders'
+import { useEffect, useState } from 'react'
+import { NEXT_ORDER_STATUSES, type Order, type OrderStatus } from '@/features/orders'
 
 interface OrderStatusDialogProps {
   order: Order | null
@@ -28,10 +28,10 @@ export default function OrderStatusDialog({
 }: OrderStatusDialogProps) {
   const [selected, setSelected] = useState<OrderStatus>(order?.status ?? 'pending')
 
-  // Sync when order changes
-  if (order && selected !== order.status && !loading) {
-    setSelected(order.status)
-  }
+  useEffect(() => { setSelected(order?.status ?? 'pending'); }, [order])
+  const availableStatuses = order
+    ? [order.status, ...NEXT_ORDER_STATUSES[order.status]]
+    : []
 
   return (
     <Dialog open={Boolean(order)} onClose={onClose} maxWidth="xs" fullWidth>
@@ -45,11 +45,11 @@ export default function OrderStatusDialog({
           <Select
             label="Status"
             value={selected}
-            onChange={(e) => setSelected(e.target.value as OrderStatus)}
+            onChange={(e) => { setSelected(e.target.value); }}
           >
-            {ORDER_STATUSES.map((s) => (
-              <MenuItem key={s} value={s} sx={{ textTransform: 'capitalize' }}>
-                {s}
+            {availableStatuses.map((status) => (
+              <MenuItem key={status} value={status} sx={{ textTransform: 'capitalize' }}>
+                {status}
               </MenuItem>
             ))}
           </Select>

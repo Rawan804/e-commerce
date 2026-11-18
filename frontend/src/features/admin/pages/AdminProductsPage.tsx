@@ -90,14 +90,14 @@ export default function AdminProductsPage() {
   function openAdd() { setFormMode('add'); setEditing(null); setFormOpen(true) }
   function openEdit(p: Product) { setFormMode('edit'); setEditing(p); setFormOpen(true) }
 
-  async function handleSubmit(input: ProductInput) {
+  async function handleSubmit(input: ProductInput, image: File | null) {
     setSaving(true)
     try {
       if (formMode === 'edit' && editing) {
-        await productsService.update(editing.id, input)
+        await productsService.update(editing.id, { ...input, image })
         setToast({ msg: `"${input.name}" updated.`, severity: 'success' })
       } else {
-        await productsService.create(input)
+        await productsService.create({ ...input, image })
         setToast({ msg: `"${input.name}" added.`, severity: 'success' })
       }
       setFormOpen(false)
@@ -185,7 +185,6 @@ export default function AdminProductsPage() {
                   <TableCell sx={{ fontWeight: 700 }}>Category</TableCell>
                   <TableCell sx={{ fontWeight: 700 }}>Price</TableCell>
                   <TableCell sx={{ fontWeight: 700 }}>Stock</TableCell>
-                  <TableCell sx={{ fontWeight: 700 }}>Featured</TableCell>
                   <TableCell align="right" sx={{ fontWeight: 700 }}>Actions</TableCell>
                 </TableRow>
               </TableHead>
@@ -193,7 +192,7 @@ export default function AdminProductsPage() {
                 {items.map((product) => (
                   <TableRow key={product.id} hover>
                     <TableCell>
-                      <Stack direction="row" spacing={1.5} alignItems="center">
+                      <Stack direction="row" spacing={1.5} sx={{ alignItems: 'center' }}>
                         <Box sx={{ width: 44, height: 44, borderRadius: 1, overflow: 'hidden', flexShrink: 0 }}>
                           <ProductImage src={product.image} alt={product.name} aspectRatio="1/1" />
                         </Box>
@@ -208,21 +207,18 @@ export default function AdminProductsPage() {
                     <TableCell sx={{ fontWeight: 600 }}>{formatCurrency(product.price)}</TableCell>
                     <TableCell>
                       <Chip
-                        label={product.stock === 0 ? 'Out of stock' : `${product.stock}`}
+                        label={product.stock === null ? 'Unavailable' : product.stock === 0 ? 'Out of stock' : `${product.stock}`}
                         size="small"
-                        color={product.stock === 0 ? 'error' : product.stock <= 10 ? 'warning' : 'success'}
+                        color={product.stock === null ? 'default' : product.stock === 0 ? 'error' : product.stock <= 10 ? 'warning' : 'success'}
                         variant="outlined"
                       />
                     </TableCell>
-                    <TableCell>
-                      {product.featured && <Chip label="Featured" size="small" color="primary" variant="outlined" />}
-                    </TableCell>
                     <TableCell align="right">
-                      <Stack direction="row" spacing={0.5} justifyContent="flex-end">
-                        <Button size="small" startIcon={<EditOutlined />} onClick={() => openEdit(product)}>
+                      <Stack direction="row" spacing={0.5} sx={{ justifyContent: 'flex-end' }}>
+                        <Button size="small" startIcon={<EditOutlined />} onClick={() => { openEdit(product); }}>
                           Edit
                         </Button>
-                        <Button size="small" color="error" startIcon={<DeleteOutline />} onClick={() => setDeleting(product)}>
+                        <Button size="small" color="error" startIcon={<DeleteOutline />} onClick={() => { setDeleting(product); }}>
                           Delete
                         </Button>
                       </Stack>
@@ -239,11 +235,11 @@ export default function AdminProductsPage() {
         </>
       )}
 
-      <ProductFormDialog open={formOpen} mode={formMode} initial={editing} loading={saving} onClose={() => setFormOpen(false)} onSubmit={handleSubmit} />
-      <DeleteProductDialog product={deleting} loading={deleteLoading} onClose={() => setDeleting(null)} onConfirm={handleConfirmDelete} />
+      <ProductFormDialog open={formOpen} mode={formMode} initial={editing} loading={saving} onClose={() => { setFormOpen(false); }} onSubmit={handleSubmit} />
+      <DeleteProductDialog product={deleting} loading={deleteLoading} onClose={() => { setDeleting(null); }} onConfirm={handleConfirmDelete} />
 
-      <Snackbar open={Boolean(toast)} autoHideDuration={3500} onClose={() => setToast(null)} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
-        {toast ? <Alert severity={toast.severity} variant="filled" onClose={() => setToast(null)}>{toast.msg}</Alert> : undefined}
+      <Snackbar open={Boolean(toast)} autoHideDuration={3500} onClose={() => { setToast(null); }} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
+        {toast ? <Alert severity={toast.severity} variant="filled" onClose={() => { setToast(null); }}>{toast.msg}</Alert> : undefined}
       </Snackbar>
     </Container>
   )

@@ -87,8 +87,20 @@ export default function RegisterPage() {
         password_confirmation: values.confirmPassword,
       })
       login(user, token)
-      navigate(PATHS.account, { replace: true })
+      // New registrations are always customers — but use the actual role from
+      // the backend rather than assuming, in case it ever changes.
+      const dest = user.role === 'admin' ? PATHS.admin : PATHS.account
+      navigate(dest, { replace: true })
     } catch (err) {
+      if (err && typeof err === 'object' && 'errors' in err) {
+        // Laravel 422 field-level validation errors
+        const apiErrors = (err as { errors: Record<string, string[]> }).errors
+        const nextErrors: FormErrors = {}
+        if (apiErrors.name?.[0]) nextErrors.username = apiErrors.name[0]
+        if (apiErrors.email?.[0]) nextErrors.email = apiErrors.email[0]
+        if (apiErrors.password?.[0]) nextErrors.password = apiErrors.password[0]
+        setErrors(nextErrors)
+      }
       const message =
         err && typeof err === 'object' && 'message' in err
           ? String((err as { message: string }).message)

@@ -1,12 +1,6 @@
-import { useState } from 'react'
 import {
   Box,
   Button,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogContentText,
-  DialogTitle,
   Divider,
   Drawer,
   IconButton,
@@ -26,27 +20,17 @@ import { useAuth } from '@/features/auth'
 import ProductImage from '@/features/products/components/ProductImage'
 
 export default function CartDrawer() {
-  const { items, total, count, isCartOpen, closeCart, updateQty, removeItem, clearCart } =
+  const { items, total, count, isCartOpen, closeCart, updateQty, removeItem } =
     useCart()
   const { isAuthenticated } = useAuth()
   const navigate = useNavigate()
-  const [checkoutOpen, setCheckoutOpen] = useState(false)
-
   function handleCheckout() {
+    closeCart()
     if (isAuthenticated) {
-      closeCart()
       navigate(PATHS.checkout)
     } else {
-      setCheckoutOpen(true)
+      navigate(PATHS.login, { state: { from: { pathname: PATHS.checkout } } })
     }
-  }
-
-  const closeCheckout = () => setCheckoutOpen(false)
-
-  function placeDemoOrder() {
-    clearCart()
-    setCheckoutOpen(false)
-    closeCart()
   }
 
   return (
@@ -150,7 +134,7 @@ export default function CartDrawer() {
                           <IconButton
                             size="small"
                             aria-label={`Decrease quantity of ${item.name}`}
-                            onClick={() => updateQty(item.productId, item.qty - 1)}
+                            onClick={() => { updateQty(item.productId, item.qty - 1); }}
                           >
                             <RemoveOutlined fontSize="small" />
                           </IconButton>
@@ -160,8 +144,8 @@ export default function CartDrawer() {
                           <IconButton
                             size="small"
                             aria-label={`Increase quantity of ${item.name}`}
-                            disabled={item.qty >= item.stock}
-                            onClick={() => updateQty(item.productId, item.qty + 1)}
+                            disabled={item.qty >= 100 || (item.stock !== null && item.qty >= item.stock)}
+                            onClick={() => { updateQty(item.productId, item.qty + 1); }}
                           >
                             <AddOutlined fontSize="small" />
                           </IconButton>
@@ -169,7 +153,7 @@ export default function CartDrawer() {
                         <IconButton
                           size="small"
                           aria-label={`Remove ${item.name} from cart`}
-                          onClick={() => removeItem(item.productId)}
+                          onClick={() => { removeItem(item.productId); }}
                           sx={{ color: 'text.secondary' }}
                         >
                           <DeleteOutline fontSize="small" />
@@ -211,25 +195,6 @@ export default function CartDrawer() {
         )}
       </Drawer>
 
-      {/* Demo checkout confirmation */}
-      <Dialog open={checkoutOpen} onClose={closeCheckout} maxWidth="xs" fullWidth>
-        <DialogTitle sx={{ fontWeight: 700 }}>Demo checkout</DialogTitle>
-        <DialogContent>
-          <DialogContentText>
-            This is a demo storefront, so payment is not connected to a real
-            provider. Your card will not be charged. Clicking &quot;Place demo
-            order&quot; clears the cart and confirms the order for
-            {' '}
-            <strong>{formatCurrency(total)}</strong>.
-          </DialogContentText>
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 3 }}>
-          <Button onClick={closeCheckout}>Cancel</Button>
-          <Button variant="contained" onClick={placeDemoOrder}>
-            Place demo order
-          </Button>
-        </DialogActions>
-      </Dialog>
     </>
   )
 }

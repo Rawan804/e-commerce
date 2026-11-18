@@ -4,8 +4,8 @@ import {
   Button,
   Card,
   CardContent,
-  Chip,
   Container,
+  Alert,
   Divider,
   Grid,
   Skeleton,
@@ -29,14 +29,16 @@ export default function CustomerDashboardPage() {
   const { count, total, openCart } = useCart()
   const [recentOrders, setRecentOrders] = useState<Order[]>([])
   const [ordersLoading, setOrdersLoading] = useState(true)
+  const [ordersError, setOrdersError] = useState(false)
 
   useEffect(() => {
     if (!user) return
     let active = true
     setOrdersLoading(true)
     ordersService
-      .list({ page: 1, perPage: 3, userId: user.id })
+      .list({ page: 1, perPage: 3 })
       .then((res) => { if (active) setRecentOrders(res.items) })
+      .catch(() => { if (active) setOrdersError(true) })
       .finally(() => { if (active) setOrdersLoading(false) })
     return () => { active = false }
   }, [user])
@@ -126,7 +128,7 @@ export default function CustomerDashboardPage() {
         <Grid size={{ xs: 12, md: 5 }}>
           <Card sx={{ height: '100%' }}>
             <CardContent>
-              <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 2 }}>
+              <Stack direction="row" spacing={1} sx={{ mb: 2, alignItems: 'center' }}>
                 <ShoppingBagOutlined color="primary" />
                 <Typography variant="h6" sx={{ fontWeight: 700 }}>
                   Current cart
@@ -178,8 +180,8 @@ export default function CustomerDashboardPage() {
         <Grid size={{ xs: 12, md: 7 }}>
           <Card sx={{ height: '100%' }}>
             <CardContent>
-              <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
-                <Stack direction="row" alignItems="center" spacing={1}>
+              <Stack direction="row" sx={{ mb: 2, justifyContent: 'space-between', alignItems: 'center' }}>
+                <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
                   <ReceiptLongOutlined color="primary" />
                   <Typography variant="h6" sx={{ fontWeight: 700 }}>
                     Recent orders
@@ -190,7 +192,9 @@ export default function CustomerDashboardPage() {
                 </Button>
               </Stack>
 
-              {ordersLoading ? (
+              {ordersError ? (
+                <Alert severity="error">Could not load recent orders.</Alert>
+              ) : ordersLoading ? (
                 <Stack spacing={1.5}>
                   {[1, 2, 3].map((i) => <Skeleton key={i} variant="rounded" height={56} />)}
                 </Stack>
@@ -232,7 +236,7 @@ export default function CustomerDashboardPage() {
                           {formatRelativeDate(order.createdAt)} · {order.items.length} item{order.items.length !== 1 ? 's' : ''}
                         </Typography>
                       </Box>
-                      <Stack direction="row" alignItems="center" spacing={1}>
+                      <Stack direction="row" spacing={1} sx={{ alignItems: 'center' }}>
                         <Typography sx={{ fontWeight: 700 }}>{formatCurrency(order.total)}</Typography>
                         <OrderStatusChip status={order.status} />
                       </Stack>

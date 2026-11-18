@@ -1,139 +1,186 @@
 /**
  * ordersService
  *
- * VITE_USE_MOCK=true  (default) → in-memory demo data.
- * VITE_USE_MOCK=false           → real API endpoints:
- *     GET    /orders?page=&per_page=&search=&status=&user_id=
+ * Laravel endpoints:
+ *     GET    /orders?page=&per_page=&status=
  *     GET    /orders/{id}
- *     POST   /orders
+ *     POST   /orders         { items: [{ product_id, quantity }] }
  *     PATCH  /orders/{id}/status  { status }
+ *
+ * Laravel OrderResource shape:
+ *   {
+ *     id, user_id, status, total,
+ *     items: [{ product_id, product_name, unit_price, quantity, subtotal }],
+ *     created_at, updated_at
+ *   }
+ *
+ * Single resources are wrapped: { data: { ...order } }
+ * Collections are wrapped:      { data: [...orders], meta: {...}, links: {...} }
  */
 
-import { env } from '@/shared/config/env'
 import { apiClient } from '@/shared/lib/apiClient'
-import { SEED_ORDERS } from '../data/seedOrders'
+import { env } from '@/shared/config/env'
+import type { ApiError, PaginatedResponse } from '@/shared/types/api.types'
 import type {
   CreateOrderPayload,
   Order,
+  OrderItem,
   OrderPageResult,
   OrderQuery,
   OrderStatus,
 } from '../types/order.types'
 
-// ─── Mock store ───────────────────────────────────────────────────────────────
-let store: Order[] = [...SEED_ORDERS]
-let nextOrderNum = SEED_ORDERS.length + 1
-
-function delay<T>(value: T, ms = 300): Promise<T> {
-  return new Promise((resolve) => setTimeout(() => resolve(value), ms))
+// ─── Backend DTO (Laravel OrderResource shape) ───────────────────────────────
+interface OrderItemDto {
+  product_id: number
+  product_name: string
+  unit_price: string | number
+  quantity: number
+  subtotal: string | number
 }
 
-function padId(n: number): string {
-  return `ORD-${String(n).padStart(4, '0')}`
+export interface OrderDto {
+  id: number
+  user_id: number
+  user_name?: string | null
+  status: OrderStatus
+  total: string | number
+  items?: OrderItemDto[]
+  created_at: string
+  updated_at: string
 }
 
-// ─── Mock implementations ─────────────────────────────────────────────────────
+interface OrderDtoEnvelope {
+  data: OrderDto
+}
 
-function mockList(query: OrderQuery): OrderPageResult {
-  let filtered = [...store]
-
-  if (query.userId !== undefined) {
-    filtered = filtered.filter((o) => o.userId === query.userId)
+function getApiError(error: unknown, fallback: string): ApiError {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'message' in error &&
+    typeof error.message === 'string' &&
+    'status' in error
+  ) {
+    return error as ApiError
   }
-  if (query.status && query.status !== 'all') {
-    filtered = filtered.filter((o) => o.status === query.status)
+  if (error instanceof Error) return { message: error.message, status: null }
+  return { message: fallback, status: null }
+}
+
+export function orderErrorMessage(
+  error: unknown,
+  fallback: string,
+  uncertainOutcomeMessage?: string,
+): string {
+  const apiError = getApiError(error, fallback)
+  if (env.isDev) console.error('Orders API request failed:', apiError)
+  if (apiError.status === 500) {
+    return uncertainOutcomeMessage ?? 'The server could not complete this request. Please try again later.'
   }
-  if (query.search?.trim()) {
-    const q = query.search.trim().toLowerCase()
-    filtered = filtered.filter(
-      (o) =>
-        o.id.toLowerCase().includes(q) ||
-        o.address.fullName.toLowerCase().includes(q) ||
-        o.items.some((i) => i.name.toLowerCase().includes(q)),
-    )
-  }
+  const validationMessages = apiError.errors
+    ? Object.values(apiError.errors).flat().join(' ')
+    : ''
+  return validationMessages ? `${apiError.message} ${validationMessages}` : apiError.message
+}
 
-  // Sort newest first
-  filtered.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+export function isOrderServerError(error: unknown): boolean {
+  return getApiError(error, '').status === 500
+}
 
-  const total = filtered.length
-  const totalPages = Math.max(1, Math.ceil(total / query.perPage))
-  const page = Math.min(Math.max(query.page, 1), totalPages)
-  const start = (page - 1) * query.perPage
+function invalidCreatePayload(field: string, message: string): never {
+  throw Object.assign(new Error(message), {
+    status: 422,
+    code: 'VALIDATION_ERROR',
+    errors: { [field]: [message] },
+  })
+}
 
+function mapOrderItem(item: OrderItemDto): OrderItem {
   return {
-    items: filtered.slice(start, start + query.perPage),
-    total,
-    page,
-    perPage: query.perPage,
-    totalPages,
+    productId: item.product_id,
+    name: item.product_name,
+    price: Number(item.unit_price),
+    qty: item.quantity,
   }
 }
 
-function mockGetById(id: string): Order | null {
-  return store.find((o) => o.id === id) ?? null
-}
-
-function mockCreate(payload: CreateOrderPayload): Order {
-  const now = new Date().toISOString()
-  const order: Order = {
-    id: padId(nextOrderNum++),
-    ...payload,
-    status: 'pending',
-    createdAt: now,
-    updatedAt: now,
+export function orderFromDto(dto: OrderDto): Order {
+  return {
+    id: String(dto.id),
+    userId: dto.user_id,
+    userName: dto.user_name ?? null,
+    items: (dto.items ?? []).map(mapOrderItem),
+    total: Number(dto.total),
+    status: dto.status,
+    createdAt: dto.created_at,
+    updatedAt: dto.updated_at,
   }
-  store = [order, ...store]
-  return order
-}
-
-function mockUpdateStatus(id: string, status: OrderStatus): Order {
-  const idx = store.findIndex((o) => o.id === id)
-  if (idx === -1) throw new Error(`Order ${id} not found`)
-  const updated = { ...store[idx], status, updatedAt: new Date().toISOString() }
-  store = store.map((o, i) => (i === idx ? updated : o))
-  return updated
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 async function list(query: OrderQuery): Promise<OrderPageResult> {
-  if (!env.useMock) {
-    const res = await apiClient.get<OrderPageResult>('/orders', {
-      params: {
-        page: query.page,
-        per_page: query.perPage,
-        search: query.search || undefined,
-        status: query.status !== 'all' ? query.status : undefined,
-        user_id: query.userId,
-      },
-    })
-    return res
+  const res = await apiClient.get<PaginatedResponse<OrderDto>>('/orders', {
+    params: {
+      page: query.page,
+      per_page: query.perPage,
+      status: query.status !== 'all' ? query.status : undefined,
+    },
+  })
+  return {
+    items: res.data.map(orderFromDto),
+    total: res.meta.total,
+    page: res.meta.current_page,
+    perPage: res.meta.per_page,
+    totalPages: Math.max(1, res.meta.last_page),
   }
-  return delay(mockList(query))
 }
 
 async function getById(id: string): Promise<Order | null> {
-  if (!env.useMock) {
-    return apiClient.get<Order>(`/orders/${id}`)
+  try {
+    const res = await apiClient.get<OrderDtoEnvelope>(`/orders/${id}`)
+    return orderFromDto(res.data)
+  } catch (e) {
+    if ((e as { status?: number }).status === 404) return null
+    throw e
   }
-  return delay(mockGetById(id))
 }
 
+/**
+ * Create an order. When using the real API, only product_id + quantity are
+ * sent per item — the backend resolves names/prices from the Products module.
+ */
 async function create(payload: CreateOrderPayload): Promise<Order> {
-  if (!env.useMock) {
-    return apiClient.post<Order>('/orders', payload)
+  if (!Array.isArray(payload.items) || payload.items.length < 1 || payload.items.length > 50) {
+    invalidCreatePayload('items', 'An order must contain between 1 and 50 items.')
   }
-  await delay(undefined, 500)
-  return mockCreate(payload)
+  const productIds = new Set<number>()
+  payload.items.forEach((item, index) => {
+    if (!Number.isSafeInteger(item.productId) || item.productId < 1) {
+      invalidCreatePayload(`items.${index}.product_id`, 'Product IDs must be positive integers.')
+    }
+    if (productIds.has(item.productId)) {
+      invalidCreatePayload(`items.${index}.product_id`, 'Each product may only appear once.')
+    }
+    if (!Number.isInteger(item.qty) || item.qty < 1 || item.qty > 100) {
+      invalidCreatePayload(`items.${index}.quantity`, 'Quantity must be an integer from 1 to 100.')
+    }
+    productIds.add(item.productId)
+  })
+
+  const res = await apiClient.post<OrderDtoEnvelope>('/orders', {
+    items: payload.items.map((item) => ({
+      product_id: item.productId,
+      quantity: item.qty,
+    })),
+  })
+  return orderFromDto(res.data)
 }
 
 async function updateStatus(id: string, status: OrderStatus): Promise<Order> {
-  if (!env.useMock) {
-    return apiClient.patch<Order>(`/orders/${id}/status`, { status })
-  }
-  await delay(undefined, 300)
-  return mockUpdateStatus(id, status)
+  const res = await apiClient.patch<OrderDtoEnvelope>(`/orders/${id}/status`, { status })
+  return orderFromDto(res.data)
 }
 
 export const ordersService = { list, getById, create, updateStatus } as const

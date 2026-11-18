@@ -1,9 +1,8 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   Box,
   Button,
   IconButton,
-  TextField,
   Typography,
 } from '@mui/material'
 import UploadOutlined from '@mui/icons-material/CloudUploadOutlined'
@@ -11,53 +10,44 @@ import ClearOutlined from '@mui/icons-material/ClearOutlined'
 import ImageOutlined from '@mui/icons-material/ImageOutlined'
 
 interface ImageUploadFieldProps {
-  value: string
-  onChange: (url: string) => void
+  value: File | null
+  existingUrl?: string
+  onChange: (file: File | null) => void
   error?: string
 }
 
-export default function ImageUploadField({ value, onChange, error }: ImageUploadFieldProps) {
+/**
+ * Product images are uploaded as files through Laravel's image endpoint.
+ */
+export default function ImageUploadField({ value, existingUrl, onChange, error }: ImageUploadFieldProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const [preview, setPreview] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!value) {
+      setPreview(null)
+      return
+    }
+    const url = URL.createObjectURL(value)
+    setPreview(url)
+    return () => { URL.revokeObjectURL(url); }
+  }, [value])
 
   function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => {
-      const dataUrl = reader.result as string
-      setPreview(dataUrl)
-      onChange(dataUrl)
-    }
-    reader.readAsDataURL(file)
+    onChange(file)
   }
 
   function clear() {
-    setPreview(null)
-    onChange('')
+    onChange(null)
     if (inputRef.current) inputRef.current.value = ''
   }
 
-  const displayPreview = preview ?? (value && value.startsWith('data:') ? value : null)
-  const isLocalFile = displayPreview !== null
+  const displayPreview = preview ?? existingUrl ?? null
 
   return (
     <Box>
-      <TextField
-        label="Image URL"
-        value={isLocalFile ? '' : value}
-        onChange={(e) => {
-          setPreview(null)
-          onChange(e.target.value)
-        }}
-        error={Boolean(error)}
-        helperText={error ?? (isLocalFile ? 'Using uploaded file' : 'Paste a https:// image URL, or upload a file below')}
-        disabled={isLocalFile}
-        slotProps={{
-          htmlInput: { 'aria-label': 'Product image URL' },
-        }}
-      />
-
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1 }}>
         <Button
           component="label"
@@ -70,16 +60,19 @@ export default function ImageUploadField({ value, onChange, error }: ImageUpload
           <input
             ref={inputRef}
             type="file"
-            accept="image/*"
+            accept="image/jpeg,image/png,image/webp"
             hidden
             onChange={handleFile}
           />
         </Button>
-        {isLocalFile && (
+        {value && (
           <IconButton size="small" aria-label="Remove uploaded image" onClick={clear}>
             <ClearOutlined fontSize="small" />
           </IconButton>
         )}
+        <Typography variant="caption" color={error ? 'error' : 'text.secondary'}>
+          {error ?? (value ? value.name : 'JPG, PNG, or WebP up to 2 MB')}
+        </Typography>
       </Box>
 
       {/* Preview */}
@@ -98,18 +91,18 @@ export default function ImageUploadField({ value, onChange, error }: ImageUpload
           bgcolor: 'background.default',
         }}
       >
-        {value || displayPreview ? (
+        {displayPreview ? (
           <Box
             component="img"
-            src={displayPreview ?? value}
+            src={displayPreview}
             alt="Product preview"
-            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none' }}
+            onError={(e) => { (e.currentTarget).style.display = 'none' }}
             sx={{ width: '100%', height: '100%', objectFit: 'cover' }}
           />
         ) : (
           <Box sx={{ color: 'text.disabled', textAlign: 'center' }}>
             <ImageOutlined sx={{ fontSize: 32 }} />
-            <Typography variant="caption" display="block">
+            <Typography variant="caption" sx={{ display: 'block' }}>
               Preview
             </Typography>
           </Box>

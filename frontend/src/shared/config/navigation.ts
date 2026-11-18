@@ -3,9 +3,9 @@ import { PATHS } from './paths'
 export interface NavItem {
   label: string
   path: string
-
+  /** When true, item is only shown to authenticated users */
   authRequired?: boolean
-
+  /** When set, item is only shown to users with this specific role */
   role?: 'admin' | 'customer'
 }
 
