@@ -23,10 +23,10 @@ import {
   Typography,
 } from '@mui/material'
 import { isOrderServerError, NEXT_ORDER_STATUSES, orderErrorMessage, ordersService, ORDER_STATUSES, useAdminOrderPlaced, type Order, type OrderStatus } from '@/features/orders'
-import { formatCurrency, formatDate } from '@/shared/lib/formatters'
-import ErrorMessage from '@/shared/components/feedback/ErrorMessage'
-import EmptyState from '@/shared/components/feedback/EmptyState'
-import ProductPagination from '@/features/products/components/ProductPagination'
+import { formatCurrency, formatDate }  from "../../../shared/lib/formatters";
+import ErrorMessage from '../../../shared/components/feedback/ErrorMessage'
+import EmptyState from '../../../shared/components/feedback/EmptyState'
+import ProductPagination from '../../../features/products/components/ProductPagination'
 import OrderStatusChip from '../components/OrderStatusChip'
 import OrderStatusDialog from '../components/OrderStatusDialog'
 
