@@ -10,8 +10,10 @@
         "google/protobuf": "^5.36",
         "grpc/grpc": "^1.85",
         "laravel/framework": "^12.0",
+        "laravel/reverb": "^1.13",
         "laravel/tinker": "^2.10.1",
-        "php-open-source-saver/jwt-auth": "^2.8"
+        "php-open-source-saver/jwt-auth": "^2.8",
+        "vladimir-yuldashev/laravel-queue-rabbitmq": "^15.0"
     },
     "require-dev": {
         "fakerphp/faker": "^1.23",
