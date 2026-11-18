@@ -1,14 +1,15 @@
 import path from 'path'
+import { fileURLToPath } from 'url'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
-// https://vite.dev/config/
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+
 export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      // Lets you write `import Foo from '@/features/...'` anywhere in src/
-      '@': path.resolve(__dirname, './src'),
+      '@': path.resolve(__dirname, './frontend/src'),
     },
   },
 })
